@@ -215,3 +215,5 @@
 .cache/clangd/index
 .github
 .vscode
+Kcom.*
+tags
