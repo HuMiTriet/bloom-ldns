@@ -3300,6 +3300,11 @@ ldns_key2buffer_str(ldns_buffer* output, const ldns_key* k)
       ldns_buffer_printf(output, "Algorithm: %d (LDNS_SIGN_ML_DSA_44)\n", LDNS_SIGN_ML_DSA_44);
       status = ldns_oqs_key2buffer_str(output, k);
       break;
+    case LDNS_SIGN_ML_DSA_65:
+      ldns_buffer_printf(output, "Private-key-format: v1.2\n");
+      ldns_buffer_printf(output, "Algorithm: %d (LDNS_SIGN_ML_DSA_65)\n", LDNS_SIGN_ML_DSA_65);
+      status = ldns_oqs_key2buffer_str(output, k);
+      break;
     }
 #endif /* HAVE_SSL */
   }

@@ -1409,6 +1409,9 @@ ldns_key* ldns_key_new_frm_algorithm(ldns_signing_algorithm alg,
   case LDNS_SIGN_ML_DSA_44:
     ldns_key_set_external_key(k, ldns_key_new_oqs_frm_algorithm("ML-DSA-44"));
     break;
+  case LDNS_SIGN_ML_DSA_65:
+    ldns_key_set_external_key(k, ldns_key_new_oqs_frm_algorithm("ML-DSA-65"));
+    break;
   }
   ldns_key_set_algorithm(k, alg);
   return k;
@@ -2076,6 +2079,7 @@ ldns_rr* ldns_key2rr(const ldns_key* k)
     internal_data = 1;
     break;
   case LDNS_SIGN_ML_DSA_44:
+  case LDNS_SIGN_ML_DSA_65:
     ldns_rr_push_rdf(pubkey,
                      ldns_native2rdf_int8(LDNS_RDF_TYPE_ALG, ldns_key_algorithm(k)));
 
