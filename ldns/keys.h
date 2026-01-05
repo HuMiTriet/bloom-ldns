@@ -61,7 +61,10 @@ extern "C"
     LDNS_ED448 = 16, /* RFC 8080 */
     LDNS_INDIRECT = 252,
     LDNS_PRIVATEDNS = 253,
-    LDNS_PRIVATEOID = 254
+    LDNS_PRIVATEOID = 254,
+    LDNS_ML_DSA_44 = 245,
+    LDNS_ML_DSA_65 = 246,
+    LDNS_ML_DSA_87 = 247,
   };
   typedef enum ldns_enum_algorithm ldns_algorithm;
 
@@ -114,6 +117,9 @@ extern "C"
   };
   typedef enum ldns_enum_signing_algorithm ldns_signing_algorithm;
 
+#define LDNS_SIGN_ML_DSA_44_SCHEME "ML-DSA-44"
+#define LDNS_SIGN_ML_DSA_65_SCHEME "ML-DSA-65"
+#define LDNS_SIGN_ML_DSA_87_SCHEME "ML-DSA-87"
   /**
    * General key structure, can contain all types of keys that
    * are used in DNSSEC. Mostly used to store private keys, since

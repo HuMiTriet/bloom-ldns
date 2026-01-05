@@ -15,6 +15,7 @@
 
 #include <ldns/ldns.h>
 #include <oqs/sig.h>
+#include <string.h>
 
 #ifdef HAVE_SSL
 #include <openssl/bn.h>
@@ -417,12 +418,64 @@ static EVP_PKEY* ldns_key_new_frm_fp_ed448_l(FILE* fp, int* line_nr)
 }
 #endif
 
+static oqs_key*
+ldns_key_new_frm_fp_oqs_l(FILE* fp, char* algorithm)
+{
+  char key_str[LDNS_MAX_PACKETLEN];
+  ldns_rdf* b64rdf = NULL;
+  ldns_buffer* key_buffer = NULL;
+  oqs_key* priv_key = NULL;
+  size_t algo_len = 0;
+
+  if (ldns_fget_keyword_data_l(fp, "Key", ": ", key_str, "\n",
+                               sizeof(key_str), NULL)
+      == -1) {
+    printf("Error - Key Field Not Available\n");
+    return NULL;
+  }
+  if (ldns_str2rdf_b64(&b64rdf, key_str) != LDNS_STATUS_OK) {
+    printf("Error converting base64 string to RDF buffer\n");
+    return NULL;
+  }
+
+  key_buffer = ldns_buffer_new(LDNS_MAX_PACKETLEN);
+  ldns_buffer_write(key_buffer, ldns_rdf_data(b64rdf), ldns_rdf_size(b64rdf));
+  ldns_buffer_rewind(key_buffer);
+  ldns_rdf_deep_free(b64rdf);
+
+  priv_key = calloc(sizeof(oqs_key), 1);
+
+  // Read the fields from the buffer
+  // Read underlying signature secret key
+  priv_key->sk_len = ldns_buffer_read_u32(key_buffer);
+  priv_key->sk = calloc(priv_key->sk_len, 1);
+  ldns_buffer_read(key_buffer, priv_key->sk, priv_key->sk_len);
+
+  // Read underlying signature public key
+  priv_key->pk_len = ldns_buffer_read_u32(key_buffer);
+  priv_key->pk = calloc(priv_key->pk_len, 1);
+  ldns_buffer_read(key_buffer, priv_key->pk, priv_key->pk_len);
+  ldns_buffer_free(key_buffer);
+
+  algo_len = strlen(algorithm) + 1;
+  if (algo_len > 1024) {
+    fprintf(stderr, "ERROR Algorithm string is invalid\n");
+    free(priv_key);
+    return NULL;
+  }
+  priv_key->alg_id = calloc(1, algo_len);
+  strcpy(priv_key->alg_id, algorithm);
+
+  return priv_key;
+}
+
 ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
 {
   ldns_key* k;
   char* d;
   ldns_signing_algorithm alg;
   ldns_rr* key_rr;
+  char alg_id[5];
 #ifdef HAVE_SSL
   RSA* rsa;
 #ifdef USE_DSA
@@ -607,6 +660,18 @@ ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
   if (strncmp(d, "165 HMAC-SHA512", 4) == 0) {
     alg = LDNS_SIGN_HMACSHA512;
   }
+
+  if (strncmp(d, "245", 3) == 0 && isspace((unsigned char)d[3])) {
+    alg = LDNS_SIGN_ML_DSA_44;
+  }
+  if (strncmp(d, "246", 3) == 0 && isspace((unsigned char)d[3])) {
+    alg = LDNS_SIGN_ML_DSA_65;
+  }
+
+  if (strncmp(d, "247", 3) == 0 && isspace((unsigned char)d[3])) {
+    alg = LDNS_SIGN_ML_DSA_87;
+  }
+
   LDNS_FREE(d);
 
   switch (alg) {
@@ -712,6 +777,21 @@ ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
 #endif /* splint */
     break;
 #endif
+  case LDNS_SIGN_ML_DSA_44:
+    ldns_key_set_algorithm(k, alg);
+    ldns_key_set_external_key(k, ldns_key_new_frm_fp_oqs_l(fp, (char*)LDNS_SIGN_ML_DSA_44_SCHEME));
+    break;
+
+  case LDNS_SIGN_ML_DSA_65:
+    ldns_key_set_algorithm(k, alg);
+    ldns_key_set_external_key(k, ldns_key_new_frm_fp_oqs_l(fp, (char*)LDNS_SIGN_ML_DSA_65_SCHEME));
+    break;
+
+  case LDNS_SIGN_ML_DSA_87:
+    ldns_key_set_algorithm(k, alg);
+    ldns_key_set_external_key(k, ldns_key_new_frm_fp_oqs_l(fp, (char*)LDNS_SIGN_ML_DSA_87_SCHEME));
+    break;
+
   default:
     ldns_key_free(k);
     return LDNS_STATUS_SYNTAX_ALG_ERR;

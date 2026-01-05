@@ -713,7 +713,7 @@ AC_DEFUN([ACX_SSL_CHECKS], [
 
             AC_MSG_CHECKING([for EVP_sha256 in -lcrypto])
             LIBS="$LIBS -lcrypto"
-            LIBSSL_LIBS="$LIBSSL_LIBS -lcrypto"
+            LIBSSL_LIBS="$LIBSSL_LIBS -lcrypto -loqs"
             AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[
                 int EVP_sha256(void);
                 (void)EVP_sha256();

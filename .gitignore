@@ -217,3 +217,5 @@
 .vscode
 Kcom.*
 tags
+compile_commands.json
+test_pqc/pqc_com.signed
