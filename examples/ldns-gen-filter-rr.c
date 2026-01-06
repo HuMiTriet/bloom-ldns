@@ -6,11 +6,14 @@
 #include "ldns/error.h"
 #include "ldns/rr.h"
 #include "ldns/util.h"
+#include "ldns/zone.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+
+#include <errno.h>
 
 char* prog;
 int verbosity = 2;
@@ -63,34 +66,60 @@ show_algorithms(FILE* out)
 static void
 usage(FILE* fp, char* prog)
 {
-  fprintf(fp, "%s [-f <filter>] -p <false positive rate> [-u] [-v] [-a] key [key [key]]  \n",
+  fprintf(fp, "%s [-f <filter>] [-u] [-v] -p <false positive rate> <zonefile1> <zonefile2>  key [key [key]]  \n",
           prog);
-  fprintf(fp, "  generate a new key pair for domain\n");
-  fprintf(fp, "  -a <alg>\tuse the specified algorithm (-a list to");
-  fprintf(fp, " show a list)\n");
-  fprintf(fp, "  -k\t\tset the flags to 257; key signing key\n");
-  fprintf(fp, "  -b <bits>\tspecify the keylength\n");
-  fprintf(fp, "  -r <random>\tspecify a random device (defaults to /dev/random)\n");
-  fprintf(fp, "\t\tto seed the random generator with\n");
-  fprintf(fp, "  -s\t\tcreate additional symlinks with constant names\n");
-  fprintf(fp, "  -f\t\tforce override of existing symlinks\n");
-  fprintf(fp, "  -v\t\tshow the version and exit\n");
-  fprintf(fp, "  The following files will be created:\n");
-  fprintf(fp, "    K<name>+<alg>+<id>.key\tPublic key in RR format\n");
-  fprintf(fp, "    K<name>+<alg>+<id>.private\tPrivate key in key format\n");
-  fprintf(fp, "    K<name>+<alg>+<id>.ds\tDS in RR format (only for DNSSEC KSK keys)\n");
-  fprintf(fp, "  The base name (K<name>+<alg>+<id> will be printed to stdout\n");
+  fprintf(fp, "  generate a new filter rr type\n");
+  fprintf(fp, "  -f - filter type (default to a bloom fitler) (-f list to show a list)\n");
+  fprintf(fp, "  -p <double> - false positive rate (must be greater than 0)\n");
+  fprintf(fp, "  -u <int> - number of modified RRSIG to be included in a filter (default value 1000) and must be greater than 1000\n");
+}
+
+ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list)
+{
+  FILE* fp = fopen(filename, "r");
+
+  if (!fp) {
+    fprintf(stderr, "Unable to open %s: %s\n", filename, strerror(errno));
+    return LDNS_STATUS_FILE_ERR;
+  }
+
+  ldns_rr* rr = NULL;
+  ldns_status status = LDNS_STATUS_OK;
+  int line_nr = 0;
+  while ((status = ldns_rr_new_frm_fp_l(&rr, fp, NULL, NULL, NULL, &line_nr))) {
+    if (!rr)
+      continue;
+
+    if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_RRSIG) {
+      ldns_rr_list_push_rr(*rrsig_list, rr);
+    }
+    else {
+      ldns_rr_free(rr);
+    }
+  }
+
+  if (status != LDNS_STATUS_SYNTAX_EMPTY && status != LDNS_STATUS_OK) {
+    fprintf(stderr, "Warning: Parsing ended with status %s at line %d in %s\n",
+            ldns_get_errorstr_by_id(status), line_nr, filename);
+  }
+
+  fclose(fp);
+
+  return LDNS_STATUS_OK;
 }
 
 int main(int argc, char* argv[])
 {
-  const char* zonefile_name;
-  FILE* zonefile = NULL;
+  char *fn1, *fn2;
+  FILE *fp1, *fp2;
+  ldns_zone *z1, *z2;
+
+  int line_nr1 = 0, line_nr2 = 0;
 
   int c;
-  int filter = 0;
+  ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0;
-  while ((c = getopt(argc, argv, "f:p:uv")) != -1) {
+  while ((c = getopt(argc, argv, "f:u:vp:")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -107,18 +136,101 @@ int main(int argc, char* argv[])
       break;
 
     default:
-
       exit(EXIT_FAILURE);
       break;
     }
   }
 
-  // count the number of rrsigs
-  // struct bloom rrsig_bloom;
-  // int rrsig_count = 0;
-  // double error_rate = 0.2;
-  //
-  // bloom_init2(&rrsig_bloom, rrsig_count, error_rate);
+  argc -= optind;
+  argv += optind;
+
+  if (argc != 2) {
+    argv -= optind;
+    usage(stderr, argv[0]);
+    exit(EXIT_FAILURE);
+  }
+
+  fn1 = argv[0];
+  fp1 = fopen(fn1, "r");
+
+  ldns_rr_list* sigs1 = ldns_rr_list_new();
+  printf("Reading Zone 1: %s\n", fn1);
+  if (load_rrsigs(fn1, &sigs1)) {
+    exit(EXIT_FAILURE);
+  }
+  printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs1), fn1);
+
+  fn2 = argv[1];
+  fp2 = fopen(fn2, "r");
+
+  ldns_rr_list* sigs2 = ldns_rr_list_new();
+  printf("Reading Zone 2: %s\n", fn2);
+  if (load_rrsigs(fn2, &sigs2)) {
+    exit(EXIT_FAILURE);
+  }
+  printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs2), fn2);
+
+  printf("Canonicalizing and sorting...\n");
+  for (size_t i = 0; i < ldns_rr_list_rr_count(sigs1); i++) {
+    ldns_rr2canonical(ldns_rr_list_rr(sigs1, i));
+  }
+  ldns_rr_list_sort(sigs1);
+
+  for (size_t i = 0; i < ldns_rr_list_rr_count(sigs2); i++) {
+    ldns_rr2canonical(ldns_rr_list_rr(sigs2, i));
+  }
+  ldns_rr_list_sort(sigs2);
+
+  printf("Comparing lists...\n");
+  size_t i1 = 0, i2 = 0;
+  size_t c1 = ldns_rr_list_rr_count(sigs1);
+  size_t c2 = ldns_rr_list_rr_count(sigs2);
+
+  ldns_rr_list* affected_rrsigs = ldns_rr_list_new();
+  while (i1 < c1 && i2 < c2) {
+    ldns_rr* rr1 = ldns_rr_list_rr(sigs1, i1);
+    ldns_rr* rr2 = ldns_rr_list_rr(sigs2, i2);
+
+    int cmp = ldns_rr_compare(rr1, rr2);
+
+    if (cmp < 0) {
+      /* rr1 is smaller than rr2, so rr1 is not in zone file 2 (since lists are sorted) */
+      ldns_rr_list_push_rr(affected_rrsigs, rr1);
+      i1++;
+    }
+    else if (cmp > 0) {
+      i2++;
+    }
+    else {
+      i1++;
+      i2++;
+    }
+  }
+
+  while (i1 < c1) {
+    ldns_rr* rr1 = ldns_rr_list_rr(sigs1, i1);
+    ldns_rr_list_push_rr(affected_rrsigs, rr1);
+    i1++;
+  }
+
+  ldns_rr_list_deep_free(sigs1);
+  ldns_rr_list_deep_free(sigs2);
+
+  struct bloom bloom;
+  if (bloom_init2(&bloom, ldns_rr_list_rr_count(affected_rrsigs), false_positive) != 0) {
+    fprintf(stderr, "Error initializing bloom filter\n");
+    ldns_rr_list_deep_free(sigs1);
+    ldns_rr_list_deep_free(sigs2);
+    exit(EXIT_FAILURE);
+  }
+
+  for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
+
+    bloom_add(&bloom, const void* buffer, int len)
+  }
+
+  ldns_rr_list_deep_free(affected_rrsigs);
+  bloom_free(&bloom);
 
   exit(EXIT_SUCCESS);
 }
