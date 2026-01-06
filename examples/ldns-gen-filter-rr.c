@@ -1,9 +1,12 @@
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "bloom_filter/bloom.h"
 #include "ldns/error.h"
+#include "ldns/host2wire.h"
+#include "ldns/packet.h"
 #include "ldns/rr.h"
 #include "ldns/util.h"
 #include "ldns/zone.h"
@@ -151,8 +154,6 @@ int main(int argc, char* argv[])
   }
 
   fn1 = argv[0];
-  fp1 = fopen(fn1, "r");
-
   ldns_rr_list* sigs1 = ldns_rr_list_new();
   printf("Reading Zone 1: %s\n", fn1);
   if (load_rrsigs(fn1, &sigs1)) {
@@ -161,8 +162,6 @@ int main(int argc, char* argv[])
   printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs1), fn1);
 
   fn2 = argv[1];
-  fp2 = fopen(fn2, "r");
-
   ldns_rr_list* sigs2 = ldns_rr_list_new();
   printf("Reading Zone 2: %s\n", fn2);
   if (load_rrsigs(fn2, &sigs2)) {
@@ -225,9 +224,15 @@ int main(int argc, char* argv[])
   }
 
   for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
-
-    bloom_add(&bloom, const void* buffer, int len)
+    uint8_t* wire = NULL;
+    size_t size = 0;
+    if (ldns_rr2wire(&wire, ldns_rr_list_rr(affected_rrsigs, i), LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
+      bloom_add(&bloom, wire, (int)size);
+      LDNS_FREE(wire);
+    }
   }
+
+  bloom_print(&bloom);
 
   ldns_rr_list_deep_free(affected_rrsigs);
   bloom_free(&bloom);
