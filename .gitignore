@@ -219,3 +219,11 @@ Kcom.*
 tags
 compile_commands.json
 test_pqc/pqc_com.signed
+examples/bloom_filter/.libs/MurmurHash2.o
+examples/bloom_filter/.libs/bloom.o
+examples/bloom_filter/MurmurHash2.lo
+examples/bloom_filter/MurmurHash2.o
+examples/bloom_filter/bloom.lo
+examples/bloom_filter/bloom.o
+examples/ldns-gen-filter-rr
+examples/ldns-gen-filter-rr.o

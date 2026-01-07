@@ -232,7 +232,7 @@ examples/bloom_filter/bloom.lo: $(srcdir)/examples/bloom_filter/bloom.c
 examples/bloom_filter/MurmurHash2.lo: $(srcdir)/examples/bloom_filter/MurmurHash2.c
 	$(COMP_LIB) $(LIBSSL_CPPFLAGS) -c $(srcdir)/examples/bloom_filter/MurmurHash2.c -o examples/bloom_filter/MurmurHash2.lo
 
-$(LDNS_GEN_FILTER_RR):
+$(LDNS_GEN_FILTER_RR): $(LDNS_GEN_FILTER_RR_LOBJS) $(LIB) $(LIBLOBJS)
 	$(LINK_EXE) $(LDNS_GEN_FILTER_RR_LOBJS) $(LIBLOBJS) $(LIB) $(LIBSSL_LIBS) $(LIBS) -lm -o $(LDNS_GEN_FILTER_RR) $(top_builddir)/libldns.la
 
 examples/ldns-dane.1: $(srcdir)/examples/ldns-dane.1.in
@@ -241,11 +241,11 @@ examples/ldns-dane.1: $(srcdir)/examples/ldns-dane.1.in
 examples/ldns-verify-zone.1: $(srcdir)/examples/ldns-verify-zone.1.in
 	$(edit) $(srcdir)/examples/ldns-verify-zone.1.in > examples/ldns-verify-zone.1
 
-install-examples: $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) examples/ldns-dane.1 examples/ldns-verify-zone.1
+install-examples: $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR) examples/ldns-dane.1 examples/ldns-verify-zone.1
 	$(INSTALL) -m 755 -d $(DESTDIR)$(bindir)
 	$(INSTALL) -m 755 -d $(DESTDIR)$(mandir)
 	$(INSTALL) -m 755 -d $(DESTDIR)$(mandir)/man1
-	for p in $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) ; do \
+	for p in $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR) ; do \
 		$(LIBTOOL) --mode=install cp $$p$(EXEEXT) $(DESTDIR)$(bindir) ; \
 		if test -f $$p.1 ; \
 		then $(INSTALL) -m 644 $$p.1 $(DESTDIR)$(mandir)/man1 ; \
@@ -254,7 +254,7 @@ install-examples: $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_P
 	done
 
 uninstall-examples:
-	for p in $(EX_PROGS_BASENM) ; do \
+	for p in $(EX_PROGS_BASENM) ldns-gen-filter-rr ; do \
 		rm -f $(DESTDIR)$(bindir)/$$p$(EXEEXT) $(DESTDIR)$(mandir)/man1/$$p.1 ;\
 	done
 	test ! -d $(DESTDIR)$(mandir) || rmdir -p $(DESTDIR)$(mandir)/man1 || :;
@@ -584,7 +584,7 @@ depend:
 				>> $(DEPEND_TMP) ;\
 		done; \
 	done
-	for p in $(EXAMPLE_PROGS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS); do \
+	for p in $(EXAMPLE_PROGS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR); do \
 		echo "$$p: $$p.lo \$$(LIB)" >> $(DEPEND_TMP) ; done
 	echo "$(TESTNS): `for o in $(TESTNS_LOBJS) ; do \
 				echo -n "$$o " ; done`\$$(LIB)" \
