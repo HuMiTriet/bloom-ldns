@@ -1,15 +1,12 @@
+#include "config.h"
+
+#include <ldns/ldns.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "bloom_filter/bloom.h"
-#include "ldns/error.h"
-#include "ldns/host2wire.h"
-#include "ldns/packet.h"
-#include "ldns/rr.h"
-#include "ldns/util.h"
-#include "ldns/zone.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -113,11 +110,6 @@ ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list)
 
 int main(int argc, char* argv[])
 {
-  char *fn1, *fn2;
-  FILE *fp1, *fp2;
-  ldns_zone *z1, *z2;
-
-  int line_nr1 = 0, line_nr2 = 0;
 
   int c;
   ldns_filter_algorithms filter = BLOOM_FILTER;
@@ -153,6 +145,7 @@ int main(int argc, char* argv[])
     exit(EXIT_FAILURE);
   }
 
+  char *fn1, *fn2;
   fn1 = argv[0];
   ldns_rr_list* sigs1 = ldns_rr_list_new();
   printf("Reading Zone 1: %s\n", fn1);
@@ -222,6 +215,8 @@ int main(int argc, char* argv[])
     ldns_rr_list_deep_free(sigs2);
     exit(EXIT_FAILURE);
   }
+
+  ldns_rdf* exp = ldns_rr_rrsig_expiration(ldns_rr_list_rr(sigs1, 0));
 
   for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
     uint8_t* wire = NULL;
