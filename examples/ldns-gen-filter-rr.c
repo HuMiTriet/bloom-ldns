@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "bloom_filter/bloom.h"
+#include "ldns/rdata.h"
+#include "ldns/rr.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -17,27 +19,6 @@
 
 char* prog;
 int verbosity = 2;
-
-unsigned int count_rrsigs(FILE* fp)
-{
-  ldns_rr* current_rr = NULL;
-  ldns_status status;
-  int line_nr = 0;
-
-  size_t rrsig_count = 0;
-  while ((status = ldns_rr_new_frm_fp_l(&current_rr, fp, 0, NULL, NULL, &line_nr)) == LDNS_STATUS_OK) {
-    if (ldns_rr_get_type(current_rr) == LDNS_RR_TYPE_RRSIG) {
-      rrsig_count++;
-    }
-    ldns_rr_free(current_rr);
-  }
-  if (status != LDNS_STATUS_SYNTAX_EMPTY && status != LDNS_STATUS_OK) {
-    fprintf(stderr, "Error parsing zone at line %d: %s\n",
-            line_nr, ldns_get_errorstr_by_id(status));
-  }
-
-  return rrsig_count;
-}
 
 typedef enum ldns_enum_filter_algorithm
 {
@@ -86,7 +67,7 @@ ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list)
   ldns_rr* rr = NULL;
   ldns_status status = LDNS_STATUS_OK;
   int line_nr = 0;
-  while ((status = ldns_rr_new_frm_fp_l(&rr, fp, NULL, NULL, NULL, &line_nr))) {
+  while ((status = ldns_rr_new_frm_fp_l(&rr, fp, NULL, NULL, NULL, &line_nr)) == LDNS_STATUS_OK) {
     if (!rr)
       continue;
 
@@ -108,12 +89,23 @@ ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list)
   return LDNS_STATUS_OK;
 }
 
+int compare_exp_date(const void* a, const void* b)
+{
+  ldns_rr* rrsig_a = (ldns_rr*)a;
+  ldns_rr* rrsig_b = (ldns_rr*)b;
+
+  ldns_rdf* exp_a = ldns_rr_rrsig_expiration(rrsig_a);
+  ldns_rdf* exp_b = ldns_rr_rrsig_expiration(rrsig_b);
+
+  return ldns_rdf_compare(exp_a, exp_b);
+}
+
 int main(int argc, char* argv[])
 {
 
   int c;
   ldns_filter_algorithms filter = BLOOM_FILTER;
-  double false_positive = 0;
+  double false_positive = 0.2;
   while ((c = getopt(argc, argv, "f:u:vp:")) != -1) {
     switch (c) {
     case 'f':
@@ -178,7 +170,7 @@ int main(int argc, char* argv[])
   size_t c1 = ldns_rr_list_rr_count(sigs1);
   size_t c2 = ldns_rr_list_rr_count(sigs2);
 
-  ldns_rr_list* affected_rrsigs = ldns_rr_list_new();
+  ldns_rr_list* tmp_rrsigs = ldns_rr_list_new();
   while (i1 < c1 && i2 < c2) {
     ldns_rr* rr1 = ldns_rr_list_rr(sigs1, i1);
     ldns_rr* rr2 = ldns_rr_list_rr(sigs2, i2);
@@ -187,7 +179,7 @@ int main(int argc, char* argv[])
 
     if (cmp < 0) {
       /* rr1 is smaller than rr2, so rr1 is not in zone file 2 (since lists are sorted) */
-      ldns_rr_list_push_rr(affected_rrsigs, rr1);
+      ldns_rr_list_push_rr(tmp_rrsigs, rr1);
       i1++;
     }
     else if (cmp > 0) {
@@ -201,22 +193,27 @@ int main(int argc, char* argv[])
 
   while (i1 < c1) {
     ldns_rr* rr1 = ldns_rr_list_rr(sigs1, i1);
-    ldns_rr_list_push_rr(affected_rrsigs, rr1);
+    ldns_rr_list_push_rr(tmp_rrsigs, rr1);
     i1++;
   }
 
+  ldns_rr_list* affected_rrsigs = ldns_rr_list_clone(tmp_rrsigs);
+
+  ldns_rr_list_free(tmp_rrsigs);
   ldns_rr_list_deep_free(sigs1);
   ldns_rr_list_deep_free(sigs2);
+
+  /* Sort by expiration date using qsort and the helper function */
+  qsort(affected_rrsigs->_rrs,
+        ldns_rr_list_rr_count(affected_rrsigs),
+        sizeof(ldns_rr*),
+        compare_exp_date);
 
   struct bloom bloom;
   if (bloom_init2(&bloom, ldns_rr_list_rr_count(affected_rrsigs), false_positive) != 0) {
     fprintf(stderr, "Error initializing bloom filter\n");
-    ldns_rr_list_deep_free(sigs1);
-    ldns_rr_list_deep_free(sigs2);
     exit(EXIT_FAILURE);
   }
-
-  ldns_rdf* exp = ldns_rr_rrsig_expiration(ldns_rr_list_rr(sigs1, 0));
 
   for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
     uint8_t* wire = NULL;
