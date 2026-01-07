@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <ldns/ldns.h>
+#include <sched.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -9,10 +10,12 @@
 #include "bloom_filter/bloom.h"
 #include "ldns/rdata.h"
 #include "ldns/rr.h"
+#include "ldns/zone.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <errno.h>
@@ -55,7 +58,7 @@ usage(FILE* fp, char* prog)
   fprintf(fp, "  -u <int> - number of modified RRSIG to be included in a filter (default value 1000) and must be greater than 1000\n");
 }
 
-ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list)
+ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list, bool rrsig_file)
 {
   FILE* fp = fopen(filename, "r");
 
@@ -67,15 +70,22 @@ ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list)
   ldns_rr* rr = NULL;
   ldns_status status = LDNS_STATUS_OK;
   int line_nr = 0;
-  while ((status = ldns_rr_new_frm_fp_l(&rr, fp, NULL, NULL, NULL, &line_nr)) == LDNS_STATUS_OK) {
-    if (!rr)
-      continue;
+  if (rrsig_file) {
+    ldns_zone* zone = NULL;
+    status = ldns_zone_new_frm_fp_l(&zone, fp, NULL, 3600, LDNS_RR_CLASS_IN, &line_nr);
+    *rrsig_list = ldns_zone_rrs(zone);
+  }
+  else {
+    while ((status = ldns_rr_new_frm_fp_l(&rr, fp, NULL, NULL, NULL, &line_nr)) == LDNS_STATUS_OK) {
+      if (!rr)
+        continue;
 
-    if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_RRSIG) {
-      ldns_rr_list_push_rr(*rrsig_list, rr);
-    }
-    else {
-      ldns_rr_free(rr);
+      if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_RRSIG) {
+        ldns_rr_list_push_rr(*rrsig_list, rr);
+      }
+      else {
+        ldns_rr_free(rr);
+      }
     }
   }
 
@@ -91,13 +101,13 @@ ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list)
 
 int compare_exp_date(const void* a, const void* b)
 {
-  ldns_rr* rrsig_a = (ldns_rr*)a;
-  ldns_rr* rrsig_b = (ldns_rr*)b;
+  ldns_rr* rrsig_a = *(ldns_rr**)a;
+  ldns_rr* rrsig_b = *(ldns_rr**)b;
 
-  ldns_rdf* exp_a = ldns_rr_rrsig_expiration(rrsig_a);
-  ldns_rdf* exp_b = ldns_rr_rrsig_expiration(rrsig_b);
+  int32_t exp_a = (int32_t)ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rrsig_a));
+  int32_t exp_b = (int32_t)ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rrsig_b));
 
-  return ldns_rdf_compare(exp_a, exp_b);
+  return exp_a - exp_b;
 }
 
 int main(int argc, char* argv[])
@@ -106,7 +116,8 @@ int main(int argc, char* argv[])
   int c;
   ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0.2;
-  while ((c = getopt(argc, argv, "f:u:vp:")) != -1) {
+  bool rrsig_file = false;
+  while ((c = getopt(argc, argv, "f:u:vp:r")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -120,6 +131,9 @@ int main(int argc, char* argv[])
       break;
     case 'p':
       false_positive = (double)atoi(optarg);
+      break;
+    case 'r':
+      rrsig_file = true;
       break;
 
     default:
@@ -141,7 +155,7 @@ int main(int argc, char* argv[])
   fn1 = argv[0];
   ldns_rr_list* sigs1 = ldns_rr_list_new();
   printf("Reading Zone 1: %s\n", fn1);
-  if (load_rrsigs(fn1, &sigs1)) {
+  if (load_rrsigs(fn1, &sigs1, rrsig_file)) {
     exit(EXIT_FAILURE);
   }
   printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs1), fn1);
@@ -149,7 +163,7 @@ int main(int argc, char* argv[])
   fn2 = argv[1];
   ldns_rr_list* sigs2 = ldns_rr_list_new();
   printf("Reading Zone 2: %s\n", fn2);
-  if (load_rrsigs(fn2, &sigs2)) {
+  if (load_rrsigs(fn2, &sigs2, rrsig_file)) {
     exit(EXIT_FAILURE);
   }
   printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs2), fn2);
@@ -209,25 +223,63 @@ int main(int argc, char* argv[])
         sizeof(ldns_rr*),
         compare_exp_date);
 
-  struct bloom bloom;
-  if (bloom_init2(&bloom, ldns_rr_list_rr_count(affected_rrsigs), false_positive) != 0) {
-    fprintf(stderr, "Error initializing bloom filter\n");
-    exit(EXIT_FAILURE);
-  }
+  // split the rrsigs according to their expiration date.
 
-  for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
-    uint8_t* wire = NULL;
-    size_t size = 0;
-    if (ldns_rr2wire(&wire, ldns_rr_list_rr(affected_rrsigs, i), LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
-      bloom_add(&bloom, wire, (int)size);
-      LDNS_FREE(wire);
+  size_t count = ldns_rr_list_rr_count(affected_rrsigs);
+  size_t group_start = 0;
+  for (size_t i = 1; i <= count; i++) {
+    bool end_of_group = false;
+    if (i == count) {
+      end_of_group = true;
+    }
+    else {
+      ldns_rr* prev = ldns_rr_list_rr(affected_rrsigs, group_start);
+      ldns_rr* curr = ldns_rr_list_rr(affected_rrsigs, i);
+      ldns_rdf* prev_exp = ldns_rr_rrsig_expiration(prev);
+      ldns_rdf* curr_exp = ldns_rr_rrsig_expiration(curr);
+
+      time_t t_prev = ldns_rdf2native_time_t(prev_exp);
+      time_t t_curr = ldns_rdf2native_time_t(curr_exp);
+      struct tm tm_prev, tm_curr;
+      localtime_r(&t_prev, &tm_prev);
+      localtime_r(&t_curr, &tm_curr);
+
+      if (tm_prev.tm_year != tm_curr.tm_year || tm_prev.tm_mon != tm_curr.tm_mon || tm_prev.tm_mday != tm_curr.tm_mday) {
+        end_of_group = true;
+      }
+    }
+
+    if (end_of_group) {
+      size_t group_size = i - group_start;
+      ldns_rr* representative = ldns_rr_list_rr(affected_rrsigs, group_start);
+      ldns_rdf* exp = ldns_rr_rrsig_expiration(representative);
+      time_t t = ldns_rdf2native_time_t(exp);
+      char buf[26];
+      strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&t));
+      printf("Expiration: %s\n", buf);
+
+      struct bloom bloom;
+      if (bloom_init2(&bloom, group_size, false_positive) != 0) {
+        fprintf(stderr, "Error initializing bloom filter\n");
+        exit(EXIT_FAILURE);
+      }
+
+      for (size_t j = group_start; j < i; j++) {
+        uint8_t* wire = NULL;
+        size_t size = 0;
+        if (ldns_rr2wire(&wire, ldns_rr_list_rr(affected_rrsigs, j), LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
+          bloom_add(&bloom, wire, (int)size);
+          LDNS_FREE(wire);
+        }
+      }
+      bloom_print(&bloom);
+      bloom_free(&bloom);
+
+      group_start = i;
     }
   }
 
-  bloom_print(&bloom);
-
   ldns_rr_list_deep_free(affected_rrsigs);
-  bloom_free(&bloom);
 
   exit(EXIT_SUCCESS);
 }
