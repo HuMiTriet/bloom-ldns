@@ -8,8 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "bloom_filter/bloom.h"
+#include "ldns/host2str.h"
 #include "ldns/rdata.h"
 #include "ldns/rr.h"
+#include "ldns/rr_functions.h"
 #include "ldns/zone.h"
 
 #include <sys/types.h>
@@ -192,7 +194,34 @@ int main(int argc, char* argv[])
     int cmp = ldns_rr_compare(rr1, rr2);
 
     if (cmp < 0) {
+
+#ifdef DEBUG
+      printf("rrsig in %s :\n", fn1);
+      ldns_rr_print(stdout, rr1);
+      char exp_buf[26], inc_buf[26];
+      time_t t_exp = ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rr1));
+      time_t t_inc = ldns_rdf2native_time_t(ldns_rr_rrsig_inception(rr1));
+      struct tm tm_exp, tm_inc;
+      localtime_r(&t_exp, &tm_exp);
+      localtime_r(&t_inc, &tm_inc);
+      strftime(exp_buf, sizeof(exp_buf), "%Y-%m-%d %H:%M:%S", &tm_exp);
+      strftime(inc_buf, sizeof(inc_buf), "%Y-%m-%d %H:%M:%S", &tm_inc);
+      printf("  Expiration: %s\n  Inception: %s\n", exp_buf, inc_buf);
+      printf("===========================================\n");
+      printf("rrsig in %s :\n", fn2);
+      ldns_rr_print(stdout, rr2);
+      t_exp = ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rr2));
+      t_inc = ldns_rdf2native_time_t(ldns_rr_rrsig_inception(rr2));
+      localtime_r(&t_exp, &tm_exp);
+      localtime_r(&t_inc, &tm_inc);
+      strftime(exp_buf, sizeof(exp_buf), "%Y-%m-%d %H:%M:%S", &tm_exp);
+      strftime(inc_buf, sizeof(inc_buf), "%Y-%m-%d %H:%M:%S", &tm_inc);
+      printf("  Expiration: %s\n  Inception: %s\n", exp_buf, inc_buf);
+      printf("\n");
+#endif /* ifdef DEBUG */
+
       /* rr1 is smaller than rr2, so rr1 is not in zone file 2 (since lists are sorted) */
+      ldns_rdf2buffer_str_time(ldns_rr_rrsig_origttl(rr1));
       ldns_rr_list_push_rr(tmp_rrsigs, rr1);
       i1++;
     }
@@ -251,7 +280,7 @@ int main(int argc, char* argv[])
 
     if (end_of_group) {
       size_t group_size = i - group_start;
-      ldns_rr* representative = ldns_rr_list_rr(affected_rrsigs, group_start);
+      ldns_rr* representative = ldns_rr_list_rr(affected_rrsigs, i - 1);
       ldns_rdf* exp = ldns_rr_rrsig_expiration(representative);
       time_t t = ldns_rdf2native_time_t(exp);
       char buf[26];
@@ -259,7 +288,9 @@ int main(int argc, char* argv[])
       printf("Expiration: %s\n", buf);
 
       struct bloom bloom;
-      if (bloom_init2(&bloom, group_size, false_positive) != 0) {
+
+      size_t bloom_size = (group_size < 1000) ? 1000 : group_size;
+      if (bloom_init2(&bloom, bloom_size, false_positive) != 0) {
         fprintf(stderr, "Error initializing bloom filter\n");
         exit(EXIT_FAILURE);
       }
@@ -274,6 +305,7 @@ int main(int argc, char* argv[])
       }
       bloom_print(&bloom);
       bloom_free(&bloom);
+      printf("\n");
 
       group_start = i;
     }
