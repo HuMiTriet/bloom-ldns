@@ -119,7 +119,8 @@ int main(int argc, char* argv[])
   ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0.2;
   bool rrsig_file = false;
-  while ((c = getopt(argc, argv, "f:u:vp:r")) != -1) {
+  time_t current_time = 0;
+  while ((c = getopt(argc, argv, "f:c:u:vp:r")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -131,8 +132,22 @@ int main(int argc, char* argv[])
         exit(EXIT_SUCCESS);
       }
       break;
+    case 'c': {
+      struct tm tm;
+      memset(&tm, 0, sizeof(struct tm));
+      if (strptime(optarg, "%Y-%m-%d %H:%M:%S", &tm) == NULL) {
+        fprintf(stderr, "Invalid time format for -c. Use 'YYYY-MM-DD HH:MM:SS'\n");
+        exit(EXIT_FAILURE);
+      }
+      current_time = mktime(&tm);
+      if (current_time == -1) {
+        fprintf(stderr, "Failed to convert time for -c\n");
+        exit(EXIT_FAILURE);
+      }
+      break;
+    }
     case 'p':
-      false_positive = (double)atoi(optarg);
+      false_positive = atof(optarg);
       break;
     case 'r':
       rrsig_file = true;
@@ -142,6 +157,10 @@ int main(int argc, char* argv[])
       exit(EXIT_FAILURE);
       break;
     }
+  }
+
+  if (current_time == 0) {
+    time(&current_time);
   }
 
   argc -= optind;
@@ -221,8 +240,12 @@ int main(int argc, char* argv[])
 #endif /* ifdef DEBUG */
 
       /* rr1 is smaller than rr2, so rr1 is not in zone file 2 (since lists are sorted) */
-      ldns_rdf2buffer_str_time(ldns_rr_rrsig_origttl(rr1));
-      ldns_rr_list_push_rr(tmp_rrsigs, rr1);
+      time_t orig_ttl = (time_t)ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rr1));
+      time_t rrsig_exp = ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rr1));
+
+      if ((current_time + orig_ttl) < rrsig_exp) {
+        ldns_rr_list_push_rr(tmp_rrsigs, rr1);
+      }
       i1++;
     }
     else if (cmp > 0) {
@@ -295,14 +318,14 @@ int main(int argc, char* argv[])
         exit(EXIT_FAILURE);
       }
 
-      for (size_t j = group_start; j < i; j++) {
-        uint8_t* wire = NULL;
-        size_t size = 0;
-        if (ldns_rr2wire(&wire, ldns_rr_list_rr(affected_rrsigs, j), LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
-          bloom_add(&bloom, wire, (int)size);
-          LDNS_FREE(wire);
-        }
-      }
+      // for (size_t j = group_start; j < i; j++) {
+      //   uint8_t* wire = NULL;
+      //   size_t size = 0;
+      //   if (ldns_rr2wire(&wire, ldns_rr_list_rr(affected_rrsigs, j), LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
+      //     bloom_add(&bloom, wire, (int)size);
+      //     LDNS_FREE(wire);
+      //   }
+      // }
       bloom_print(&bloom);
       bloom_free(&bloom);
       printf("\n");
