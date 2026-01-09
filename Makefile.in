@@ -104,10 +104,10 @@ PYLDNS_I_FILES	= $(pywrapdir)/file_py3.i $(pywrapdir)/ldns_buffer.i $(pywrapdir)
 
 DRILL_LOBJS	= drill/chasetrace.lo drill/dnssec.lo drill/drill.lo drill/drill_util.lo drill/error.lo drill/root.lo drill/securetrace.lo drill/work.lo
 
-EXAMPLE_LOBJS	= examples/ldns-chaos.lo examples/ldns-compare-zones.lo examples/ldns-dane.lo examples/ldnsd.lo examples/ldns-dpa.lo examples/ldns-gen-zone.lo examples/ldns-key2ds.lo examples/ldns-keyfetcher.lo examples/ldns-keygen.lo examples/ldns-mx.lo examples/ldns-notify.lo examples/ldns-nsec3-hash.lo examples/ldns-read-zone.lo examples/ldns-resolver.lo examples/ldns-revoke.lo examples/ldns-rrsig.lo examples/ldns-signzone.lo examples/ldns-test-edns.lo examples/ldns-testns.lo examples/ldns-testpkts.lo examples/ldns-update.lo examples/ldns-verify-zone.lo examples/ldns-version.lo examples/ldns-walk.lo examples/ldns-zcat.lo examples/ldns-zsplit.lo
+EXAMPLE_LOBJS	= examples/ldns-chaos.lo examples/ldns-compare-zones.lo examples/ldns-dane.lo examples/ldnsd.lo examples/ldns-dpa.lo examples/ldns-gen-zone.lo examples/ldns-key2ds.lo examples/ldns-keyfetcher.lo examples/ldns-keygen.lo examples/ldns-mx.lo examples/ldns-notify.lo examples/ldns-nsec3-hash.lo examples/ldns-read-zone.lo examples/ldns-resolver.lo examples/ldns-revoke.lo examples/ldns-rrsig.lo examples/ldns-signzone.lo examples/ldns-test-edns.lo examples/ldns-testns.lo examples/ldns-testpkts.lo examples/ldns-update.lo examples/ldns-verify-zone.lo examples/ldns-version.lo examples/ldns-walk.lo examples/ldns-zcat.lo examples/ldns-zsplit.lo examples/ldns-gen-filter-rr.lo
 EXAMPLE_PROGS	= examples/ldns-chaos examples/ldns-compare-zones examples/ldnsd examples/ldns-gen-zone examples/ldns-key2ds examples/ldns-keyfetcher examples/ldns-keygen examples/ldns-mx examples/ldns-notify examples/ldns-read-zone examples/ldns-resolver examples/ldns-rrsig examples/ldns-test-edns examples/ldns-update examples/ldns-version examples/ldns-walk examples/ldns-zcat examples/ldns-zsplit
-EX_PROGS_BASENM	= ldns-chaos ldns-compare-zones ldns-dane ldnsd ldns-dpa ldns-gen-zone ldns-key2ds ldns-keyfetcher ldns-keygen ldns-mx ldns-notify ldns-nsec3-hash ldns-read-zone ldns-resolver ldns-revoke ldns-rrsig ldns-signzone ldns-test-edns ldns-testns ldns-testpkts ldns-update ldns-verify-zone ldns-version ldns-walk ldns-zcat ldns-zsplit
-EXAMPLE_PROGS_EX= ^examples/ldns-testpkts\.c|examples/ldns-testns\.c|examples/ldns-dane\.c|examples/ldns-dpa\.c|examples/ldns-nsec3-hash\.c|examples/ldns-revoke\.c|examples/ldns-signzone\.c|examples/ldns-verify-zone\.c$$
+EX_PROGS_BASENM	= ldns-chaos ldns-compare-zones ldns-dane ldnsd ldns-dpa ldns-gen-zone ldns-key2ds ldns-keyfetcher ldns-keygen ldns-mx ldns-notify ldns-nsec3-hash ldns-read-zone ldns-resolver ldns-revoke ldns-rrsig ldns-signzone ldns-test-edns ldns-testns ldns-testpkts ldns-update ldns-verify-zone ldns-version ldns-walk ldns-zcat ldns-zsplit ldns-gen-filter-rr
+EXAMPLE_PROGS_EX= ^examples/ldns-testpkts\.c|examples/ldns-testns\.c|examples/ldns-dane\.c|examples/ldns-dpa\.c|examples/ldns-nsec3-hash\.c|examples/ldns-revoke\.c|examples/ldns-signzone\.c|examples/ldns-verify-zone\.c|examples/ldns-gen-filter-rr\.c$$
 TESTNS		= examples/ldns-testns
 TESTNS_LOBJS	= examples/ldns-testns.lo examples/ldns-testpkts.lo
 LDNS_DPA	= examples/ldns-dpa
@@ -116,10 +116,6 @@ LDNS_DANE	= examples/ldns-dane
 LDNS_DANE_LOBJS	= examples/ldns-dane.lo
 EX_SSL_PROGS	= examples/ldns-nsec3-hash examples/ldns-revoke examples/ldns-signzone examples/ldns-verify-zone
 EX_SSL_LOBJS	= examples/ldns-nsec3-hash.lo examples/ldns-revoke.lo examples/ldns-signzone.lo examples/ldns-verify-zone.lo
-
-LDNS_GEN_FILTER_RR = examples/ldns-gen-filter-rr
-BLOOM_LOBJS = examples/bloom_filter/bloom.lo examples/bloom_filter/MurmurHash2.lo
-LDNS_GEN_FILTER_RR_LOBJS = examples/ldns-gen-filter-rr.lo $(BLOOM_LOBJS)
 
 COMPILE		= $(CC) $(CPPFLAGS) $(CFLAGS)
 COMP_LIB	= $(LIBTOOL) --mode=compile $(CC) $(CPPFLAGS) $(CFLAGS)
@@ -149,7 +145,6 @@ setup-builddir:
 	@if test ! -d compat ; then mkdir compat ; fi
 	@if test ! -d drill ; then mkdir drill ; fi
 	@if test ! -d examples ; then mkdir examples ; fi
-	@if test ! -d examples/bloom_filter ; then mkdir examples/bloom_filter ; fi
 	@if test ! -h config.h ; then ln -s ldns/config.h . ; fi
 	@if test ! -h lib ; then ln -s .libs lib ; fi ;
 	@if test ! -d include ; then $(INSTALL) -d include; fi
@@ -196,7 +191,7 @@ uninstall-drill:
 clean-drill:
 	$(LIBTOOL) --mode clean rm -f $(DRILL_LOBJS) drill/drill$(EXEEXT) drill/drill.1
 
-examples: setup-builddir no-examples-config-h $(LIB) $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR) examples/ldns-dane.1 examples/ldns-verify-zone.1
+examples: setup-builddir no-examples-config-h $(LIB) $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) examples/ldns-dane.1 examples/ldns-verify-zone.1
 no-examples-config-h:
 	@if test -e $(srcdir)/examples/config.h -o -e examples/config.h ; \
 	then echo "A config.h was detected in the examples subdirectory." ; \
@@ -226,26 +221,17 @@ $(LDNS_DANE):
 $(EX_SSL_PROGS):
 	$(LINK_EXE) $@.lo $(LIBLOBJS) $(LIB) $(LIBSSL_LIBS) $(LIBS) -o $@ $(top_builddir)/libldns.la
 
-examples/bloom_filter/bloom.lo: $(srcdir)/examples/bloom_filter/bloom.c
-	$(COMP_LIB) $(LIBSSL_CPPFLAGS) -DBLOOM_VERSION_MAJOR=2 -DBLOOM_VERSION_MINOR=0 -DBLOOM_VERSION=2.0 -c $(srcdir)/examples/bloom_filter/bloom.c -o examples/bloom_filter/bloom.lo
-
-examples/bloom_filter/MurmurHash2.lo: $(srcdir)/examples/bloom_filter/MurmurHash2.c
-	$(COMP_LIB) $(LIBSSL_CPPFLAGS) -c $(srcdir)/examples/bloom_filter/MurmurHash2.c -o examples/bloom_filter/MurmurHash2.lo
-
-$(LDNS_GEN_FILTER_RR): $(LDNS_GEN_FILTER_RR_LOBJS) $(LIB) $(LIBLOBJS)
-	$(LINK_EXE) $(LDNS_GEN_FILTER_RR_LOBJS) $(LIBLOBJS) $(LIB) $(LIBSSL_LIBS) $(LIBS) -lm -o $(LDNS_GEN_FILTER_RR) $(top_builddir)/libldns.la
-
 examples/ldns-dane.1: $(srcdir)/examples/ldns-dane.1.in
 	$(edit) $(srcdir)/examples/ldns-dane.1.in > examples/ldns-dane.1
 
 examples/ldns-verify-zone.1: $(srcdir)/examples/ldns-verify-zone.1.in
 	$(edit) $(srcdir)/examples/ldns-verify-zone.1.in > examples/ldns-verify-zone.1
 
-install-examples: $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR) examples/ldns-dane.1 examples/ldns-verify-zone.1
+install-examples: $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) examples/ldns-dane.1 examples/ldns-verify-zone.1
 	$(INSTALL) -m 755 -d $(DESTDIR)$(bindir)
 	$(INSTALL) -m 755 -d $(DESTDIR)$(mandir)
 	$(INSTALL) -m 755 -d $(DESTDIR)$(mandir)/man1
-	for p in $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR) ; do \
+	for p in $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) ; do \
 		$(LIBTOOL) --mode=install cp $$p$(EXEEXT) $(DESTDIR)$(bindir) ; \
 		if test -f $$p.1 ; \
 		then $(INSTALL) -m 644 $$p.1 $(DESTDIR)$(mandir)/man1 ; \
@@ -254,7 +240,7 @@ install-examples: $(EXAMPLE_PROGS) $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_P
 	done
 
 uninstall-examples:
-	for p in $(EX_PROGS_BASENM) ldns-gen-filter-rr ; do \
+	for p in $(EX_PROGS_BASENM) ; do \
 		rm -f $(DESTDIR)$(bindir)/$$p$(EXEEXT) $(DESTDIR)$(mandir)/man1/$$p.1 ;\
 	done
 	test ! -d $(DESTDIR)$(mandir) || rmdir -p $(DESTDIR)$(mandir)/man1 || :;
@@ -264,8 +250,8 @@ clean-examples:
 	for p in $(EX_PROGS_BASENM) ; do \
 		$(LIBTOOL) --mode clean rm -f $$p$(EXEEXT) ;\
 	done
-	$(LIBTOOL) --mode clean rm -f $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR)
-	$(LIBTOOL) --mode clean rm -f $(EXAMPLE_LOBJS) $(BLOOM_LOBJS)
+	$(LIBTOOL) --mode clean rm -f $(TESTNS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS)
+	$(LIBTOOL) --mode clean rm -f $(EXAMPLE_LOBJS)
 	$(LIBTOOL) --mode clean rm -f examples/ldns-dane.1 examples/ldns-verify-zone.1
 
 linktest: $(srcdir)/linktest.c libldns.la
@@ -584,7 +570,7 @@ depend:
 				>> $(DEPEND_TMP) ;\
 		done; \
 	done
-	for p in $(EXAMPLE_PROGS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS) $(LDNS_GEN_FILTER_RR); do \
+	for p in $(EXAMPLE_PROGS) $(LDNS_DPA) $(LDNS_DANE) $(EX_SSL_PROGS); do \
 		echo "$$p: $$p.lo \$$(LIB)" >> $(DEPEND_TMP) ; done
 	echo "$(TESTNS): `for o in $(TESTNS_LOBJS) ; do \
 				echo -n "$$o " ; done`\$$(LIB)" \
@@ -982,6 +968,11 @@ examples/ldns-signzone.lo examples/ldns-signzone.o: $(srcdir)/examples/ldns-sign
  $(srcdir)/ldns/dnssec_sign.h $(srcdir)/ldns/duration.h $(srcdir)/ldns/higher.h $(srcdir)/ldns/host2wire.h \
  ldns/net.h $(srcdir)/ldns/str2host.h $(srcdir)/ldns/update.h $(srcdir)/ldns/wire2host.h \
  $(srcdir)/ldns/rr_functions.h $(srcdir)/ldns/parse.h $(srcdir)/ldns/radix.h $(srcdir)/ldns/sha1.h $(srcdir)/ldns/sha2.h
+examples/ldns-gen-filter-rr.lo examples/ldns-gen-filter-rr.o: $(srcdir)/examples/ldns-gen-filter-rr.c ldns/config.h $(srcdir)/ldns/ldns.h \
+	$(srcdir)/examples/bloom_filter/bloom.h $(srcdir)/ldns/host2str.h $(srcdir)/ldns/rdata.h $(srcdir)/ldns/rr.h $(srcdir)/ldns/rr_functions.h \
+	$(srcdir)/ldns/zone.h 
+examples/bloom_filter/bloom.lo examples/bloom_filter/bloom.o: $(srcdir)/examples/bloom_filter/bloom.c $(srcdir)/examples/bloom_filter/bloom.h $(srcdir)/examples/bloom_filter/murmurhash2.h
+examples/bloom_filter/MurmurHash2.lo examples/bloom_filter/MurmurHash2.o: $(srcdir)/examples/bloom_filter/MurmurHash2.c $(srcdir)/examples/bloom_filter/murmurhash2.h
 examples/ldns-test-edns.lo examples/ldns-test-edns.o: $(srcdir)/examples/ldns-test-edns.c ldns/config.h $(srcdir)/ldns/ldns.h \
  ldns/util.h ldns/common.h $(srcdir)/ldns/buffer.h $(srcdir)/ldns/error.h $(srcdir)/ldns/dane.h \
  $(srcdir)/ldns/rdata.h $(srcdir)/ldns/rr.h $(srcdir)/ldns/dname.h $(srcdir)/ldns/dnssec.h $(srcdir)/ldns/packet.h \
@@ -1151,5 +1142,7 @@ examples/ldns-dane: examples/ldns-dane.lo $(LIB)
 examples/ldns-nsec3-hash: examples/ldns-nsec3-hash.lo $(LIB)
 examples/ldns-revoke: examples/ldns-revoke.lo $(LIB)
 examples/ldns-signzone: examples/ldns-signzone.lo $(LIB)
+examples/ldns-gen-filter-rr: examples/ldns-gen-filter-rr.lo examples/bloom_filter/bloom.lo examples/bloom_filter/MurmurHash2.lo $(LIB)
+	$(LINK_EXE) examples/ldns-gen-filter-rr.lo examples/bloom_filter/bloom.lo examples/bloom_filter/MurmurHash2.lo $(LIBLOBJS) $(LIB) $(LIBSSL_LIBS) $(LIBS) -o examples/ldns-gen-filter-rr $(top_builddir)/libldns.la
 examples/ldns-verify-zone: examples/ldns-verify-zone.lo $(LIB)
 examples/ldns-testns: examples/ldns-testns.lo examples/ldns-testpkts.lo $(LIB)
