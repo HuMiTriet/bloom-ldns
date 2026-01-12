@@ -320,24 +320,15 @@ int main(int argc, char* argv[])
         exit(EXIT_FAILURE);
       }
 
-      // for (size_t j = group_start; j < i; j++) {
-      //   uint8_t* wire = NULL;
-      //   size_t size = 0;
-      //   if (ldns_rr2wire(&wire, ldns_rr_list_rr(affected_rrsigs, j), LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
-      //     bloom_add(&bloom, wire, (int)size);
-      //     LDNS_FREE(wire);
-      //   }
-      // }
+      for (size_t j = group_start; j < i; j++) {
+        uint8_t* wire = NULL;
+        size_t size = 0;
+        if (ldns_rr2wire(&wire, ldns_rr_list_rr(affected_rrsigs, j), LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
+          bloom_add(&bloom, wire, (int)size);
+          LDNS_FREE(wire);
+        }
+      }
       bloom_print(&bloom);
-      // if (bloom.bf) {
-      //   for (unsigned long int i = 0; i < bloom.bytes; i++) {
-      //     unsigned char byte = bloom.bf[i];
-      //     for (int bit = 0; bit <= 7; bit++) {
-      //       printf("%u", (byte >> bit) & 1);
-      //     }
-      //   }
-      //   printf("\n");
-      // }
       bloom_free(&bloom);
       printf("\n");
 
