@@ -24,7 +24,7 @@
 char* prog;
 int verbosity = 2;
 
-#define DEBUG
+// #define DEBUG
 
 typedef enum ldns_enum_filter_algorithm
 {
@@ -120,8 +120,8 @@ int main(int argc, char* argv[])
   ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0.2;
   bool rrsig_file = false;
-  time_t current_time = 0;
-  while ((c = getopt(argc, argv, "f:c:u:vp:r")) != -1) {
+  int32_t current_time = 0;
+  while ((c = getopt(argc, argv, "f:c:b:u:vp:r")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -140,13 +140,16 @@ int main(int argc, char* argv[])
         fprintf(stderr, "Invalid time format for -c. Use 'YYYY-MM-DD HH:MM:SS'\n");
         exit(EXIT_FAILURE);
       }
-      current_time = mktime(&tm);
-      if (current_time == -1) {
+      time_t t = mktime(&tm);
+      if (t == -1) {
         fprintf(stderr, "Failed to convert time for -c\n");
         exit(EXIT_FAILURE);
       }
+      current_time = (int32_t)t;
       break;
     }
+    case 'b':
+      break;
     case 'p':
       false_positive = atof(optarg);
       break;
@@ -161,7 +164,7 @@ int main(int argc, char* argv[])
   }
 
   if (current_time == 0) {
-    time(&current_time);
+    current_time = (int32_t)time(NULL);
   }
 
   argc -= optind;
@@ -216,10 +219,10 @@ int main(int argc, char* argv[])
     if (cmp < 0) {
 
       /* rr1 is smaller than rr2, so rr1 is not in zone file 2 (since lists are sorted) */
-      time_t orig_ttl = (time_t)ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rr1));
-      time_t rrsig_exp = ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rr1));
+      int32_t orig_ttl = ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rr1));
+      int32_t rrsig_exp = (int32_t)ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rr1));
 
-      if ((current_time + orig_ttl) < rrsig_exp) {
+      if ((current_time + orig_ttl) < rrsig_exp && ((current_time + (2 * 86400)) < rrsig_exp)) {
 #ifdef DEBUG
         printf("rrsig in %s :\n", fn1);
         ldns_rr_print(stdout, rr1);
@@ -275,7 +278,6 @@ int main(int argc, char* argv[])
         compare_exp_date);
 
   // split the rrsigs according to their expiration date.
-
   size_t count = ldns_rr_list_rr_count(affected_rrsigs);
   size_t group_start = 0;
   for (size_t i = 1; i <= count; i++) {
@@ -312,6 +314,7 @@ int main(int argc, char* argv[])
       struct bloom bloom;
 
       size_t bloom_size = (group_size < 1000) ? 1000 : group_size;
+      printf("Num elem: %zu \n", group_size);
       if (bloom_init2(&bloom, bloom_size, false_positive) != 0) {
         fprintf(stderr, "Error initializing bloom filter\n");
         exit(EXIT_FAILURE);
@@ -326,6 +329,15 @@ int main(int argc, char* argv[])
       //   }
       // }
       bloom_print(&bloom);
+      // if (bloom.bf) {
+      //   for (unsigned long int i = 0; i < bloom.bytes; i++) {
+      //     unsigned char byte = bloom.bf[i];
+      //     for (int bit = 0; bit <= 7; bit++) {
+      //       printf("%u", (byte >> bit) & 1);
+      //     }
+      //   }
+      //   printf("\n");
+      // }
       bloom_free(&bloom);
       printf("\n");
 
