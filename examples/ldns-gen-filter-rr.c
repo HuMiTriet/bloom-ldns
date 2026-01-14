@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <bits/getopt_core.h>
+#include <ctype.h>
 #include <ldns/ldns.h>
 #include <sched.h>
 #include <stddef.h>
@@ -9,8 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "bloom_filter/bloom.h"
+#include "ldns/dnssec_sign.h"
 #include "ldns/error.h"
+#include "ldns/host2str.h"
 #include "ldns/host2wire.h"
+#include "ldns/keys.h"
 #include "ldns/packet.h"
 #include "ldns/rdata.h"
 #include "ldns/rr.h"
@@ -74,7 +78,7 @@ static void deep_free_map2rr_list(map32_t* map)
 
 static void usage(FILE* fp, char* prog)
 {
-  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] [-r] <zonefile1> <zonefile2> -o <output filename>\n",
+  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] [-r] -o <output filename> <zonefile1> <zonefile2> [key [key]]\n",
           prog);
   fprintf(fp, "  generate a new filter rr type\n");
   fprintf(fp, "  -f - filter type (default to a bloom fitler) (-f list to show a list)\n");
@@ -137,6 +141,7 @@ int main(int argc, char* argv[])
   char* domain_name = NULL;
   uint32_t ttl = 900;
   const char* output_fn = "filter.txt";
+  ldns_key_list* key_list = NULL;
 
   while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:h")) != -1) {
     switch (c) {
@@ -177,7 +182,7 @@ int main(int argc, char* argv[])
 
     case 'd':
       domain_name = optarg;
-      while (*domain_name == ' ') {
+      while (isspace(*domain_name)) {
         domain_name++;
       }
       break;
@@ -206,10 +211,73 @@ int main(int argc, char* argv[])
   argc -= optind;
   argv += optind;
 
-  if (argc != 2) {
+  if (argc < 2) {
     argv -= optind;
     usage(stderr, argv[0]);
     exit(EXIT_FAILURE);
+  }
+
+  for (int i = 2; i < argc; i++) {
+    char* key_fn_base = argv[i];
+    char* priv_key_fn = LDNS_XMALLOC(char, strlen(key_fn_base) + 9);
+    snprintf(priv_key_fn,
+             strlen(key_fn_base) + 9,
+             "%s.private",
+             key_fn_base);
+    FILE* priv_key_fp = fopen(priv_key_fn, "r");
+    int line_nr = 0;
+
+    if (!priv_key_fp) {
+      fprintf(stderr,
+              "Error: unable to read %s: %s\n",
+              priv_key_fn,
+              strerror(errno));
+      exit(EXIT_FAILURE);
+    }
+
+    ldns_key* priv_key;
+    ldns_status s;
+    s = ldns_key_new_frm_fp_l(&priv_key, priv_key_fp, &line_nr);
+    fclose(priv_key_fp);
+
+    if (s != LDNS_STATUS_OK) {
+      fprintf(stderr, "Error reading key from %s at line %d: %s\n", priv_key_fn, line_nr, ldns_get_errorstr_by_id(s));
+      exit(EXIT_FAILURE);
+    }
+
+    char* pub_key_fn = LDNS_XMALLOC(char, strlen(key_fn_base) + 5);
+    snprintf(pub_key_fn, strlen(key_fn_base) + 5, "%s.key", key_fn_base);
+
+    FILE* pub_key_fp = fopen(pub_key_fn, "r");
+
+    if (!pub_key_fp) {
+      fprintf(stderr,
+              "Error: unable to read %s: %s\n",
+              pub_key_fn,
+              strerror(errno));
+      ldns_key_deep_free(priv_key);
+      exit(EXIT_FAILURE);
+    }
+
+    ldns_rr* pub_key;
+    s = ldns_rr_new_frm_fp_l(&pub_key, pub_key_fp, NULL, NULL, NULL, &line_nr);
+    fclose(pub_key_fp);
+
+    if (s != LDNS_STATUS_OK) {
+      fprintf(stderr, "Error reading key from %s at line %d: %s\n", pub_key_fn, line_nr, ldns_get_errorstr_by_id(s));
+      exit(EXIT_FAILURE);
+    }
+
+    if (!key_list) {
+      key_list = ldns_key_list_new();
+    }
+
+    ldns_key_set_pubkey_owner(priv_key, ldns_rdf_clone(ldns_rr_owner(pub_key)));
+    ldns_key_set_flags(priv_key, ldns_rdf2native_int16(ldns_rr_rdf(pub_key, 0)));
+    ldns_key_set_keytag(priv_key, ldns_calc_keytag(pub_key));
+
+    ldns_key_list_push_key(key_list, priv_key);
+    ldns_rr_free(pub_key);
   }
 
   char *fn1, *fn2;
@@ -217,6 +285,7 @@ int main(int argc, char* argv[])
   ldns_rr_list* sigs1 = ldns_rr_list_new();
   printf("Reading Zone 1: %s\n", fn1);
   if (load_rrsigs(fn1, &sigs1, rrsig_file)) {
+    ldns_rr_list_deep_free(sigs1);
     exit(EXIT_FAILURE);
   }
   printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs1), fn1);
@@ -225,6 +294,7 @@ int main(int argc, char* argv[])
   ldns_rr_list* sigs2 = ldns_rr_list_new();
   printf("Reading Zone 2: %s\n", fn2);
   if (load_rrsigs(fn2, &sigs2, rrsig_file)) {
+    ldns_rr_list_deep_free(sigs2);
     exit(EXIT_FAILURE);
   }
   printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs2), fn2);
@@ -446,6 +516,17 @@ int main(int argc, char* argv[])
       printf("Successfully wrote to %s\n", owner_name);
     }
 
+    if (key_list) {
+      ldns_rr_list* rrset = ldns_rr_list_new();
+      ldns_rr_list_push_rr(rrset, txt_rr);
+
+      ldns_rr_list* siglist = ldns_sign_public(rrset, key_list);
+
+      ldns_rr_list_print(fp, siglist);
+      ldns_rr_list_deep_free(siglist);
+      ldns_rr_list_free(rrset);
+    }
+
     ldns_rr_free(txt_rr);
     free(full_data);
     free(owner_name);
@@ -454,6 +535,10 @@ int main(int argc, char* argv[])
   }
 
   fclose(fp);
+
+  if (key_list) {
+    ldns_key_list_free(key_list);
+  }
 
   ldns_rr_list_free(affected_rrsigs);
 
