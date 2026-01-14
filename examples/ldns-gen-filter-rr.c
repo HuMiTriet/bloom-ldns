@@ -121,9 +121,8 @@ int main(int argc, char* argv[])
   uint32_t current_time = 0;
   uint32_t exp_buffer_sec = 86400 * 2;
   char* domain_name = NULL;
-  char *output_fn = "bloom.txt";
 
-  while ((c = getopt(argc, argv, "f:c:b:u:vp:rd:o:")) != -1) {
+  while ((c = getopt(argc, argv, "f:c:b:u:vp:rd:")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -162,9 +161,9 @@ int main(int argc, char* argv[])
 
     case 'd':
       domain_name = optarg;
-      break;
-    case 'o':
-        output_fn = optarg;
+      while (*domain_name == ' ') {
+        domain_name++;
+      }
       break;
 
     default:
@@ -304,12 +303,6 @@ int main(int argc, char* argv[])
     ldns_rr_list_push_rr(rrsig_list, rrsig);
   }
 
-  FILE* out_fp = fopen(output_fn, "w");
-  if (!out_fp) {
-    perror("Error opening output file");
-    exit(EXIT_FAILURE);
-  }
-
   kh_foreach(exp2rr_list, k)
   { // for each expiration date create a bloom filter
     ldns_rr_list* rrsig_list = kh_val(exp2rr_list, k);
@@ -401,7 +394,13 @@ int main(int argc, char* argv[])
       offset += chunk_size;
     }
 
-    ldns_rr_print(out_fp, txt_rr);
+    FILE* fp = fopen(owner_name, "w");
+    if (!fp) {
+      fprintf(stderr, "Unable to open %s: %s\n", owner_name, strerror(errno));
+      return LDNS_STATUS_FILE_ERR;
+    }
+
+    ldns_rr_print(fp, txt_rr);
 
     ldns_rr_free(txt_rr);
     free(full_data);
@@ -409,8 +408,6 @@ int main(int argc, char* argv[])
 
     bloom_free(&bloom);
   }
-
-  fclose(out_fp);
 
   ldns_rr_list_free(affected_rrsigs);
 
