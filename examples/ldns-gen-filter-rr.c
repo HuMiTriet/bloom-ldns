@@ -58,9 +58,23 @@ static void show_algorithms(FILE* out)
   }
 }
 
+inline void deep_free_map2rr_list(map32_t* map)
+{
+  if (!map)
+    return;
+
+  khint_t k;
+  kh_foreach(map, k)
+  {
+    ldns_rr_list_deep_free(kh_val(map, k));
+  }
+
+  map32_destroy(map);
+}
+
 static void usage(FILE* fp, char* prog)
 {
-  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] <zonefile1> <zonefile2> \n",
+  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] <zonefile1> <zonefile2> -o <output filename>\n",
           prog);
   fprintf(fp, "  generate a new filter rr type\n");
   fprintf(fp, "  -f - filter type (default to a bloom fitler) (-f list to show a list)\n");
@@ -122,8 +136,9 @@ int main(int argc, char* argv[])
   uint32_t exp_buffer_sec = 86400 * 2;
   char* domain_name = NULL;
   uint32_t ttl = 900;
+  const char* output_fn = "filter.txt";
 
-  while ((c = getopt(argc, argv, "f:c:b:p:r:d:t:h")) != -1) {
+  while ((c = getopt(argc, argv, "f:c:b:p:r:d:t:o:h")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -165,6 +180,9 @@ int main(int argc, char* argv[])
       while (*domain_name == ' ') {
         domain_name++;
       }
+      break;
+    case 'o':
+      output_fn = optarg;
       break;
     case 'h':
       usage(stdout, prog);
@@ -312,6 +330,15 @@ int main(int argc, char* argv[])
     ldns_rr_list_push_rr(rrsig_list, rrsig);
   }
 
+  printf("Opening file for writing: '%s'\n", output_fn);
+  FILE* fp = fopen(output_fn, "a");
+  if (!fp) {
+    fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
+
+    deep_free_map2rr_list(exp2rr_list);
+    return LDNS_STATUS_FILE_ERR;
+  }
+
   kh_foreach(exp2rr_list, k)
   { // for each expiration date create a bloom filter
     ldns_rr_list* rrsig_list = kh_val(exp2rr_list, k);
@@ -352,6 +379,7 @@ int main(int argc, char* argv[])
 
     if (domain_name == NULL) {
       fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
+      deep_free_map2rr_list(exp2rr_list);
       exit(EXIT_FAILURE);
     }
 
@@ -362,6 +390,7 @@ int main(int argc, char* argv[])
     char* owner_name = malloc(owner_len);
     if (!owner_name) {
       perror("malloc");
+      deep_free_map2rr_list(exp2rr_list);
       exit(EXIT_FAILURE);
     }
 
@@ -378,6 +407,7 @@ int main(int argc, char* argv[])
     uint8_t* full_data = malloc(full_len);
     if (!full_data) {
       perror("malloc");
+      deep_free_map2rr_list(exp2rr_list);
       exit(EXIT_FAILURE);
     }
     memcpy(full_data, header_buf, header_len);
@@ -408,13 +438,6 @@ int main(int argc, char* argv[])
       offset += chunk_size;
     }
 
-    printf("Opening file for writing: '%s'\n", owner_name);
-    FILE* fp = fopen(owner_name, "w");
-    if (!fp) {
-      fprintf(stderr, "Unable to open %s: %s\n", owner_name, strerror(errno));
-      return LDNS_STATUS_FILE_ERR;
-    }
-
     ldns_rr_print(fp, txt_rr);
     if (ferror(fp)) {
       perror("Error writing to file");
@@ -423,8 +446,6 @@ int main(int argc, char* argv[])
       printf("Successfully wrote to %s\n", owner_name);
     }
 
-    fclose(fp);
-
     ldns_rr_free(txt_rr);
     free(full_data);
     free(owner_name);
@@ -432,14 +453,10 @@ int main(int argc, char* argv[])
     bloom_free(&bloom);
   }
 
+  fclose(fp);
+
   ldns_rr_list_free(affected_rrsigs);
 
-  kh_foreach(exp2rr_list, k)
-  {
-    ldns_rr_list_deep_free(kh_val(exp2rr_list, k));
-  }
-
-  map32_destroy(exp2rr_list);
-
+  deep_free_map2rr_list(exp2rr_list);
   exit(EXIT_SUCCESS);
 }
