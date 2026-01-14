@@ -47,8 +47,7 @@ ldns_lookup_table filter_algorithms[] = {
   {GOLOMB_COMPRESSED_SET, "Golomb compressed set"},
   {BINARY_FUSE_FILTER, "Binary fuse filter"}};
 
-static void
-show_algorithms(FILE* out)
+static void show_algorithms(FILE* out)
 {
   ldns_lookup_table* lt = filter_algorithms;
   fprintf(out, "Possible algorithms:\n");
@@ -59,15 +58,16 @@ show_algorithms(FILE* out)
   }
 }
 
-static void
-usage(FILE* fp, char* prog)
+static void usage(FILE* fp, char* prog)
 {
-  fprintf(fp, "%s [-f <filter>] [-u] [-v] -p <false positive rate> <zonefile1> <zonefile2>  key [key [key]]  \n",
+  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] <zonefile1> <zonefile2> \n",
           prog);
   fprintf(fp, "  generate a new filter rr type\n");
   fprintf(fp, "  -f - filter type (default to a bloom fitler) (-f list to show a list)\n");
   fprintf(fp, "  -p <double> - false positive rate (must be greater than 0)\n");
-  fprintf(fp, "  -u <int> - number of modified RRSIG to be included in a filter (default value 1000) and must be greater than 1000\n");
+  fprintf(fp, "  -c current time (usually the start of the date of the second zone file)\n");
+
+  fprintf(fp, "  output multiple files prefixed with _filter. One file for each expiration date in the zone\n");
 }
 
 ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list, bool rrsig_file)
@@ -121,8 +121,9 @@ int main(int argc, char* argv[])
   uint32_t current_time = 0;
   uint32_t exp_buffer_sec = 86400 * 2;
   char* domain_name = NULL;
+  uint32_t ttl = 900;
 
-  while ((c = getopt(argc, argv, "f:c:b:u:vp:rd:")) != -1) {
+  while ((c = getopt(argc, argv, "f:c:b:p:r:d:t:h")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -164,6 +165,14 @@ int main(int argc, char* argv[])
       while (*domain_name == ' ') {
         domain_name++;
       }
+      break;
+    case 'h':
+      usage(stdout, prog);
+      exit(EXIT_SUCCESS);
+      break;
+
+    case 't':
+      ttl = atoi(optarg);
       break;
 
     default:
@@ -337,7 +346,6 @@ int main(int argc, char* argv[])
       }
     }
 
-    // Print the latest expiration time
     time_t t_exp = (time_t)max_exp;
     struct tm tm_max;
     localtime_r(&t_exp, &tm_max);
@@ -380,7 +388,7 @@ int main(int argc, char* argv[])
     ldns_rr* txt_rr = ldns_rr_new();
     ldns_rr_set_type(txt_rr, LDNS_RR_TYPE_TXT);
     ldns_rr_set_class(txt_rr, LDNS_RR_CLASS_IN);
-    ldns_rr_set_ttl(txt_rr, 900);
+    ldns_rr_set_ttl(txt_rr, ttl);
 
     ldns_rdf* owner_rdf = ldns_rdf_new_frm_str(LDNS_RDF_TYPE_DNAME, owner_name);
     ldns_rr_set_owner(txt_rr, owner_rdf);
@@ -389,11 +397,18 @@ int main(int argc, char* argv[])
     size_t offset = 0;
     while (offset < full_len) {
       size_t chunk_size = (full_len - offset) > 255 ? 255 : (full_len - offset);
-      ldns_rdf* rdf = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_STR, chunk_size, full_data + offset);
+
+      // Prepend length byte for LDNS_RDF_TYPE_STR wire format
+      uint8_t chunk_buf[256];
+      chunk_buf[0] = (uint8_t)chunk_size;
+      memcpy(chunk_buf + 1, full_data + offset, chunk_size);
+
+      ldns_rdf* rdf = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_STR, chunk_size + 1, chunk_buf);
       ldns_rr_push_rdf(txt_rr, rdf);
       offset += chunk_size;
     }
 
+    printf("Opening file for writing: '%s'\n", owner_name);
     FILE* fp = fopen(owner_name, "w");
     if (!fp) {
       fprintf(stderr, "Unable to open %s: %s\n", owner_name, strerror(errno));
@@ -401,6 +416,14 @@ int main(int argc, char* argv[])
     }
 
     ldns_rr_print(fp, txt_rr);
+    if (ferror(fp)) {
+      perror("Error writing to file");
+    }
+    else {
+      printf("Successfully wrote to %s\n", owner_name);
+    }
+
+    fclose(fp);
 
     ldns_rr_free(txt_rr);
     free(full_data);
