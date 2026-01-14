@@ -297,11 +297,10 @@ int main(int argc, char* argv[])
 
     struct bloom bloom;
     size_t rrsig_num = ldns_rr_list_rr_count(rrsig_list);
-    size_t bloom_size = (rrsig_num < 1000) ? 1000 : rrsig_num;
 
     printf("Num rrsig: %zu \n", rrsig_num);
 
-    if (bloom_init2(&bloom, bloom_size, false_positive) != 0) {
+    if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
       fprintf(stderr, "Error initializing bloom filter\n");
       exit(EXIT_FAILURE);
     }
@@ -335,7 +334,6 @@ int main(int argc, char* argv[])
     printf("expiration date: %s\n", exp_buf);
 
     bloom_print(&bloom);
-
     bloom_free(&bloom);
   }
 
@@ -345,6 +343,7 @@ int main(int argc, char* argv[])
   {
     ldns_rr_list_deep_free(kh_val(exp2rr_list, k));
   }
+
   map32_destroy(exp2rr_list);
 
   exit(EXIT_SUCCESS);
