@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <bits/getopt_core.h>
 #include <ldns/ldns.h>
 #include <sched.h>
 #include <stddef.h>
@@ -118,7 +119,11 @@ int main(int argc, char* argv[])
   double false_positive = 0.2;
   bool rrsig_file = false;
   uint32_t current_time = 0;
-  while ((c = getopt(argc, argv, "f:c:b:u:vp:r")) != -1) {
+  uint32_t exp_buffer_sec = 86400 * 2;
+  char* domain_name = NULL;
+  char *output_fn = "bloom.txt";
+
+  while ((c = getopt(argc, argv, "f:c:b:u:vp:rd:o:")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -146,12 +151,20 @@ int main(int argc, char* argv[])
       break;
     }
     case 'b':
+      exp_buffer_sec = atoi(optarg);
       break;
     case 'p':
       false_positive = atof(optarg);
       break;
     case 'r':
       rrsig_file = true;
+      break;
+
+    case 'd':
+      domain_name = optarg;
+      break;
+    case 'o':
+        output_fn = optarg;
       break;
 
     default:
@@ -219,7 +232,7 @@ int main(int argc, char* argv[])
       uint32_t orig_ttl = ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rr1));
       uint32_t rrsig_exp = ldns_rdf2native_int32(ldns_rr_rrsig_expiration(rr1));
 
-      if ((current_time + orig_ttl) < rrsig_exp && ((current_time + (2 * 86400)) < rrsig_exp)) {
+      if ((current_time + orig_ttl) < rrsig_exp && ((current_time + exp_buffer_sec) < rrsig_exp)) {
 #ifdef DEBUG
         printf("rrsig in %s :\n", fn1);
         ldns_rr_print(stdout, rr1);
@@ -291,6 +304,12 @@ int main(int argc, char* argv[])
     ldns_rr_list_push_rr(rrsig_list, rrsig);
   }
 
+  FILE* out_fp = fopen(output_fn, "w");
+  if (!out_fp) {
+    perror("Error opening output file");
+    exit(EXIT_FAILURE);
+  }
+
   kh_foreach(exp2rr_list, k)
   { // for each expiration date create a bloom filter
     ldns_rr_list* rrsig_list = kh_val(exp2rr_list, k);
@@ -327,15 +346,71 @@ int main(int argc, char* argv[])
 
     // Print the latest expiration time
     time_t t_exp = (time_t)max_exp;
-    struct tm tm_exp;
-    char exp_buf[26];
-    localtime_r(&t_exp, &tm_exp);
-    strftime(exp_buf, sizeof(exp_buf), "%Y-%m-%d %H:%M:%S", &tm_exp);
-    printf("expiration date: %s\n", exp_buf);
+    struct tm tm_max;
+    localtime_r(&t_exp, &tm_max);
 
-    bloom_print(&bloom);
+    if (domain_name == NULL) {
+      fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
+      exit(EXIT_FAILURE);
+    }
+
+    // 1. Create TXT record owner name: _filter.YYYYMMDD.<domain_name>
+    size_t domain_len = strlen(domain_name);
+    // "_filter." (8) + YYYYMMDD (8) + "." (1) + domain + null (1) = 18 + domain_len
+    size_t owner_len = 18 + domain_len;
+    char* owner_name = malloc(owner_len);
+    if (!owner_name) {
+      perror("malloc");
+      exit(EXIT_FAILURE);
+    }
+
+    snprintf(owner_name, owner_len, "_filter.%04d%02d%02d.%s",
+             tm_max.tm_year + 1900, tm_max.tm_mon + 1, tm_max.tm_mday, domain_name);
+
+    // 2. Prepare header: v=0;s=HHMMSS;a=0;d=
+    char header_buf[32];
+    int header_len = snprintf(header_buf, sizeof(header_buf), "v=0;s=%02d%02d%02d;a=0;d=",
+                              tm_max.tm_hour, tm_max.tm_min, tm_max.tm_sec);
+
+    // 3. Combine header and bloom filter bytes into one buffer
+    size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
+    uint8_t* full_data = malloc(full_len);
+    if (!full_data) {
+      perror("malloc");
+      exit(EXIT_FAILURE);
+    }
+    memcpy(full_data, header_buf, header_len);
+    memcpy(full_data + header_len, &bloom, sizeof(struct bloom));
+    memcpy(full_data + header_len + sizeof(struct bloom), bloom.bf, bloom.bytes);
+
+    // 4. Create the TXT RR
+    ldns_rr* txt_rr = ldns_rr_new();
+    ldns_rr_set_type(txt_rr, LDNS_RR_TYPE_TXT);
+    ldns_rr_set_class(txt_rr, LDNS_RR_CLASS_IN);
+    ldns_rr_set_ttl(txt_rr, 900);
+
+    ldns_rdf* owner_rdf = ldns_rdf_new_frm_str(LDNS_RDF_TYPE_DNAME, owner_name);
+    ldns_rr_set_owner(txt_rr, owner_rdf);
+
+    // 5. Add data as 255-byte chunks
+    size_t offset = 0;
+    while (offset < full_len) {
+      size_t chunk_size = (full_len - offset) > 255 ? 255 : (full_len - offset);
+      ldns_rdf* rdf = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_STR, chunk_size, full_data + offset);
+      ldns_rr_push_rdf(txt_rr, rdf);
+      offset += chunk_size;
+    }
+
+    ldns_rr_print(out_fp, txt_rr);
+
+    ldns_rr_free(txt_rr);
+    free(full_data);
+    free(owner_name);
+
     bloom_free(&bloom);
   }
+
+  fclose(out_fp);
 
   ldns_rr_list_free(affected_rrsigs);
 
