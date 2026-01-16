@@ -445,7 +445,7 @@ int main(int argc, char* argv[])
 
     time_t t_exp = (time_t)max_exp;
     struct tm tm_max;
-    localtime_r(&t_exp, &tm_max);
+    gmtime_r(&t_exp, &tm_max);
 
     if (domain_name == NULL) {
       fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
