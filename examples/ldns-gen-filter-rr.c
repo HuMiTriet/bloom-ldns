@@ -52,7 +52,12 @@ static inline int rr_hash_func(ldns_rr* rr)
   return hash;
 }
 
-KHASHL_SET_INIT(KH_LOCAL, rr_set_t, rr_set, ldns_rr*, rr_hash_func, ldns_rr_compare);
+static inline int rr_eq_func(const ldns_rr* a, const ldns_rr* b)
+{
+  return ldns_rr_compare(a, b) == 0; // Returns 1 if equal
+}
+
+KHASHL_SET_INIT(KH_LOCAL, rr_set_t, rr_set, ldns_rr*, rr_hash_func, rr_eq_func);
 
 char* prog;
 int verbosity = 2;
@@ -332,7 +337,6 @@ int main(int argc, char* argv[])
     ldns_rr* rr = ldns_rr_list_rr(sigs2, i);
     rr_set_put(set_z2, rr, &absent_set);
   }
-  ldns_rr_list_deep_free(sigs2);
 
   ldns_rr_list* affected_rrsigs = ldns_rr_list_new();
 
@@ -354,6 +358,8 @@ int main(int argc, char* argv[])
     }
   }
 
+  rr_set_destroy(set_z2);
+  ldns_rr_list_deep_free(sigs2);
   ldns_rr_list_deep_free(sigs1);
 
   int absent;
