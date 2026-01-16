@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "bloom_filter/bloom.h"
+#include "examples/bloom_filter/murmurhash2.h"
 #include "ldns/dnssec_sign.h"
 #include "ldns/error.h"
 #include "ldns/host2str.h"
@@ -33,6 +34,25 @@
 #include "khashl.h"
 
 KHASHL_MAP_INIT(KH_LOCAL, map32_t, map32, uint32_t, ldns_rr_list*, kh_hash_uint32, kh_eq_generic);
+
+static inline int rr_hash_func(ldns_rr* rr)
+{
+  ldns_rr2canonical(rr);
+  uint8_t* wire = NULL;
+  size_t size = 0;
+  uint32_t hash = 0;
+  if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
+    hash = murmurhash2(wire, (int)size, 0x9747b28c);
+    LDNS_FREE(wire);
+  }
+  else {
+    exit(EXIT_FAILURE);
+  }
+
+  return hash;
+}
+
+KHASHL_SET_INIT(KH_LOCAL, rr_set_t, rr_set, ldns_rr*, rr_hash_func, ldns_rr_compare);
 
 char* prog;
 int verbosity = 2;
@@ -304,84 +324,37 @@ int main(int argc, char* argv[])
   }
   printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs2), fn2);
 
-  printf("Canonicalizing and sorting...\n");
-  for (size_t i = 0; i < ldns_rr_list_rr_count(sigs1); i++) {
-    ldns_rr2canonical(ldns_rr_list_rr(sigs1, i));
-  }
-  ldns_rr_list_sort(sigs1);
+  rr_set_t* set_z2 = rr_set_init();
+  int absent_set;
+  printf("Building Hash Set from Zone 2...\n");
 
   for (size_t i = 0; i < ldns_rr_list_rr_count(sigs2); i++) {
-    ldns_rr2canonical(ldns_rr_list_rr(sigs2, i));
+    ldns_rr* rr = ldns_rr_list_rr(sigs2, i);
+    rr_set_put(set_z2, rr, &absent_set);
   }
-  ldns_rr_list_sort(sigs2);
-
-  printf("Comparing lists...\n");
-  size_t i1 = 0, i2 = 0;
-  size_t c1 = ldns_rr_list_rr_count(sigs1);
-  size_t c2 = ldns_rr_list_rr_count(sigs2);
-
-  ldns_rr_list* tmp_rrsigs = ldns_rr_list_new();
-  while (i1 < c1 && i2 < c2) {
-    ldns_rr* rr1 = ldns_rr_list_rr(sigs1, i1);
-    ldns_rr* rr2 = ldns_rr_list_rr(sigs2, i2);
-
-    int cmp = ldns_rr_compare(rr1, rr2);
-
-    if (cmp < 0) {
-
-      /* rr1 is smaller than rr2, so rr1 is not in zone file 2 (since lists are sorted) */
-      uint32_t orig_ttl = ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rr1));
-      uint32_t rrsig_exp = ldns_rdf2native_int32(ldns_rr_rrsig_expiration(rr1));
-
-      if ((current_time + orig_ttl) < rrsig_exp && ((current_time + exp_buffer_sec) < rrsig_exp)) {
-#ifdef DEBUG
-        printf("rrsig in %s :\n", fn1);
-        ldns_rr_print(stdout, rr1);
-        char exp_buf[26], inc_buf[26];
-        time_t t_exp = ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rr1));
-        time_t t_inc = ldns_rdf2native_time_t(ldns_rr_rrsig_inception(rr1));
-        struct tm tm_exp, tm_inc;
-        localtime_r(&t_exp, &tm_exp);
-        localtime_r(&t_inc, &tm_inc);
-        strftime(exp_buf, sizeof(exp_buf), "%Y-%m-%d %H:%M:%S", &tm_exp);
-        strftime(inc_buf, sizeof(inc_buf), "%Y-%m-%d %H:%M:%S", &tm_inc);
-        printf("  Expiration: %s\n  Inception: %s\n", exp_buf, inc_buf);
-        printf("===========================================\n");
-        printf("rrsig in %s :\n", fn2);
-        ldns_rr_print(stdout, rr2);
-        t_exp = ldns_rdf2native_time_t(ldns_rr_rrsig_expiration(rr2));
-        t_inc = ldns_rdf2native_time_t(ldns_rr_rrsig_inception(rr2));
-        localtime_r(&t_exp, &tm_exp);
-        localtime_r(&t_inc, &tm_inc);
-        strftime(exp_buf, sizeof(exp_buf), "%Y-%m-%d %H:%M:%S", &tm_exp);
-        strftime(inc_buf, sizeof(inc_buf), "%Y-%m-%d %H:%M:%S", &tm_inc);
-        printf("  Expiration: %s\n  Inception: %s\n", exp_buf, inc_buf);
-        printf("\n");
-#endif /* ifdef DEBUG */
-        ldns_rr_list_push_rr(tmp_rrsigs, rr1);
-      }
-      i1++;
-    }
-    else if (cmp > 0) {
-      i2++;
-    }
-    else {
-      i1++;
-      i2++;
-    }
-  }
-
-  while (i1 < c1) {
-    ldns_rr* rr1 = ldns_rr_list_rr(sigs1, i1);
-    ldns_rr_list_push_rr(tmp_rrsigs, rr1);
-    i1++;
-  }
-
-  ldns_rr_list* affected_rrsigs = ldns_rr_list_clone(tmp_rrsigs);
-
-  ldns_rr_list_free(tmp_rrsigs);
-  ldns_rr_list_deep_free(sigs1);
   ldns_rr_list_deep_free(sigs2);
+
+  ldns_rr_list* affected_rrsigs = ldns_rr_list_new();
+
+  printf("Filtering Zone 1 against Zone 2 (Hash Set)...\n");
+
+  for (size_t i = 0; i < ldns_rr_list_rr_count(sigs1); i++) {
+    ldns_rr* rrsig1 = ldns_rr_list_rr(sigs1, i);
+    khint_t k_pos = rr_set_get(set_z2, rrsig1);
+
+    if (k_pos != kh_end(set_z2)) {
+      continue;
+    }
+
+    uint32_t orig_ttl = ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rrsig1));
+    uint32_t rrsig_exp = ldns_rdf2native_int32(ldns_rr_rrsig_expiration(rrsig1));
+
+    if ((current_time + orig_ttl) < rrsig_exp && current_time < rrsig_exp - exp_buffer_sec) {
+      ldns_rr_list_push_rr(affected_rrsigs, ldns_rr_clone(rrsig1));
+    }
+  }
+
+  ldns_rr_list_deep_free(sigs1);
 
   int absent;
   map32_t* exp2rr_list = map32_init();
