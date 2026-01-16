@@ -142,8 +142,9 @@ int main(int argc, char* argv[])
   uint32_t ttl = 900;
   const char* output_fn = "filter.txt";
   ldns_key_list* key_list = NULL;
+  uint32_t version = 0;
 
-  while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:h")) != -1) {
+  while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:v:h")) != -1) {
     switch (c) {
     case 'f':
       if (filter != 0) {
@@ -196,6 +197,10 @@ int main(int argc, char* argv[])
 
     case 't':
       ttl = atoi(optarg);
+      break;
+
+    case 'v':
+      version = atoi(optarg);
       break;
 
     default:
@@ -468,9 +473,9 @@ int main(int argc, char* argv[])
              tm_max.tm_year + 1900, tm_max.tm_mon + 1, tm_max.tm_mday, domain_name);
 
     // 2. Prepare header: v=0;s=HHMMSS;a=0;d=
-    char header_buf[32];
-    int header_len = snprintf(header_buf, sizeof(header_buf), "v=0;s=%02d%02d%02d;a=0;d=",
-                              tm_max.tm_hour, tm_max.tm_min, tm_max.tm_sec);
+    char header_buf[64];
+    int header_len = snprintf(header_buf, sizeof(header_buf), "v=%u;s=%02d%02d%02d;a=0;d=",
+                              version, tm_max.tm_hour, tm_max.tm_min, tm_max.tm_sec);
 
     // 3. Combine header and bloom filter bytes into one buffer
     size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
