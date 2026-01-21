@@ -451,20 +451,30 @@ int main(int argc, char* argv[])
     snprintf(owner_name, owner_len, "_filter.%04d%02d%02d.%s",
              tm_max.tm_year + 1900, tm_max.tm_mon + 1, tm_max.tm_mday, domain_name);
 
-    // 2. Prepare header: v=0;s=HHMMSS;a=0;d=
-    char header_buf[64];
-    int header_len = snprintf(header_buf, sizeof(header_buf), "v=%u;s=%02d%02d%02d;r=%u;a=0;d=",
+    // 2. Prepare header: v=0;s=HHMMSS;r=86400 * 2;a=0;d=
+    char* header_buf = NULL;
+    int header_len = asprintf(&header_buf, "v=%u;s=%02d%02d%02d;r=%u;a=0;d=",
                               version, tm_max.tm_hour, tm_max.tm_min, tm_max.tm_sec, exp_buffer_sec);
+
+    if (header_len < 0) {
+      perror("asprintf");
+      deep_free_map2rr_list(exp2rr_list);
+      free(owner_name);
+      exit(EXIT_FAILURE);
+    }
 
     // 3. Combine header and bloom filter bytes into one buffer
     size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
     uint8_t* full_data = malloc(full_len);
     if (!full_data) {
       perror("malloc");
+      free(header_buf);
       deep_free_map2rr_list(exp2rr_list);
+      free(owner_name);
       exit(EXIT_FAILURE);
     }
     memcpy(full_data, header_buf, header_len);
+    free(header_buf);
     memcpy(full_data + header_len, &bloom, sizeof(struct bloom));
     memcpy(full_data + header_len + sizeof(struct bloom), bloom.bf, bloom.bytes);
 
