@@ -437,7 +437,7 @@ int main(int argc, char* argv[])
       exit(EXIT_FAILURE);
     }
 
-    // 1. Create TXT record owner name: _filter.YYYYMMDD.<domain_name>
+    // 1. Create TXT record owner name: _filter.YYYYMMDD.<signer name>
     size_t domain_len = strlen(domain_name);
     // "_filter." (8) + YYYYMMDD (8) + "." (1) + domain + null (1) = 18 + domain_len
     size_t owner_len = 18 + domain_len;
@@ -453,8 +453,8 @@ int main(int argc, char* argv[])
 
     // 2. Prepare header: v=0;s=HHMMSS;a=0;d=
     char header_buf[64];
-    int header_len = snprintf(header_buf, sizeof(header_buf), "v=%u;s=%02d%02d%02d;a=0;d=",
-                              version, tm_max.tm_hour, tm_max.tm_min, tm_max.tm_sec);
+    int header_len = snprintf(header_buf, sizeof(header_buf), "v=%u;s=%02d%02d%02d;r=%u;a=0;d=",
+                              version, tm_max.tm_hour, tm_max.tm_min, tm_max.tm_sec, exp_buffer_sec);
 
     // 3. Combine header and bloom filter bytes into one buffer
     size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
