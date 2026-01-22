@@ -407,18 +407,8 @@ int main(int argc, char* argv[])
       exit(EXIT_FAILURE);
     }
 
-    // Track the latest expiration time while adding to bloom filter
-    uint32_t max_exp = 0;
     for (size_t i = 0; i < ldns_rr_list_rr_count(rrsig_list); i++) {
       ldns_rr* rr = ldns_rr_list_rr(rrsig_list, i);
-
-      // Track max expiration
-      uint32_t exp = ldns_rdf2native_int32(ldns_rr_rrsig_expiration(rr));
-      if (exp > max_exp) {
-        max_exp = exp;
-      }
-
-      // Add to bloom filter
       uint8_t* wire = NULL;
       size_t size = 0;
       if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
@@ -427,17 +417,13 @@ int main(int argc, char* argv[])
       }
     }
 
-    time_t t_exp = (time_t)max_exp;
-    struct tm tm_max;
-    gmtime_r(&t_exp, &tm_max);
-
     if (domain_name == NULL) {
       fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
       deep_free_map2rr_list(exp2rr_list);
       exit(EXIT_FAILURE);
     }
 
-    // 1. Create TXT record owner name: _filter.YYYYMMDD.<signer name>
+    // 1. Create TXT record owner name: YYYYMMDD._filter,<signer name>
     size_t domain_len = strlen(domain_name);
     // "_filter." (8) + YYYYMMDD (8) + "." (1) + domain + null (1) = 18 + domain_len
     size_t owner_len = 18 + domain_len;
@@ -448,13 +434,19 @@ int main(int argc, char* argv[])
       exit(EXIT_FAILURE);
     }
 
-    snprintf(owner_name, owner_len, "_filter.%04d%02d%02d.%s",
-             tm_max.tm_year + 1900, tm_max.tm_mon + 1, tm_max.tm_mday, domain_name);
+    // convert key to YYYYMMDD format
+    uint32_t exp_day = kh_key(exp2rr_list, k);
+    time_t t_exp_day = (time_t)exp_day * 86400;
+    struct tm tm_exp_day;
+    gmtime_r(&t_exp_day, &tm_exp_day);
 
-    // 2. Prepare header: v=0;s=HHMMSS;r=86400 * 2;a=0;d=
+    snprintf(owner_name, owner_len, "%04d%02d%02d._filter.%s",
+             tm_exp_day.tm_year + 1900, tm_exp_day.tm_mon + 1, tm_exp_day.tm_mday, domain_name);
+
+    // 2. Prepare header: v=0;r=86400 * 2;a=0;d=
     char* header_buf = NULL;
-    int header_len = asprintf(&header_buf, "v=%u;s=%02d%02d%02d;r=%u;a=0;d=",
-                              version, tm_max.tm_hour, tm_max.tm_min, tm_max.tm_sec, exp_buffer_sec);
+    int header_len = asprintf(&header_buf, "v=%u;r=%u;a=0;d=",
+                              version, exp_buffer_sec);
 
     if (header_len < 0) {
       perror("asprintf");
