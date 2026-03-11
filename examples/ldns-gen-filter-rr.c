@@ -11,13 +11,12 @@
 #include <string.h>
 #include <sys/mman.h>
 #include "bloom_filter/bloom.h"
-#include "examples/bloom_filter/murmurhash2.h"
 #include "ldns/error.h"
 #include "ldns/host2str.h"
 #include "ldns/host2wire.h"
 #include "ldns/packet.h"
 #include "ldns/rdata.h"
-#include "ldns/rr_functions.h"
+#include "ldns/rr.h"
 #include "ldns/util.h"
 
 #include <sys/types.h>
@@ -30,7 +29,107 @@
 
 #include "khashl.h"
 
-// KHASHL_SET_INIT(KH_LOCAL, rr_set_t, rr_set, ldns_rr*, rr_hash_func, rr_eq_func);
+/* * Extracts multiple whitespace-delimited columns from a string in a single pass.
+ * target_cols: array of 0-indexed column numbers to find.
+ * num_targets: how many columns you are looking for.
+ * col_starts: array to store the pointers to the start of each found column.
+ * col_lens: array to store the lengths of each found column.
+ * Returns the number of columns successfully found.
+ */
+static inline int get_multiple_columns(
+  const char* line,
+  const int* target_cols,
+  int num_targets,
+  const char** col_starts,
+  int* col_lens)
+{
+  if (!line || !target_cols || !col_starts || !col_lens || num_targets <= 0)
+    return 0;
+
+  const char* c = line;
+  int current_col = 0;
+  int found_count = 0;
+
+  // Initialize outputs to safe defaults (in case a column doesn't exist on this line)
+  for (int i = 0; i < num_targets; i++) {
+    col_starts[i] = NULL;
+    col_lens[i] = 0;
+  }
+
+  // Skip any leading whitespace at the very beginning of the line
+  while (*c == ' ' || *c == '\t')
+    c++;
+
+  // Walk through the string exactly once
+  while (*c != '\0' && found_count < num_targets) {
+
+    const char* current_start = c;
+
+    // Fast-forward to find the end of the current column
+    while (*c != '\0' && *c != ' ' && *c != '\t')
+      c++;
+
+    int current_len = (int)(c - current_start);
+
+    // Check if the column we just walked over is one of the targets we want
+    for (int i = 0; i < num_targets; i++) {
+      if (target_cols[i] == current_col) {
+        col_starts[i] = current_start;
+        col_lens[i] = current_len;
+        found_count++;
+      }
+    }
+
+    // Skip the whitespace gap to the next column
+    while (*c == ' ' || *c == '\t')
+      c++;
+
+    current_col++;
+  }
+
+  return found_count;
+}
+
+static inline time_t parse_dnssec_time(const char* time_str, int len)
+{
+  if (len != 14)
+    return (time_t)-1; // DNSSEC times are strictly 14 chars
+
+  // 1. Copy the 14 chars to a null-terminated stack buffer
+  char buf[15];
+  memcpy(buf, time_str, 14);
+  buf[14] = '\0';
+
+  // 2. Parse the string into a broken-down calendar struct
+  struct tm tm_time = {0};
+  if (strptime(buf, "%Y%m%d%H%M%S", &tm_time) == NULL) {
+    return (time_t)-1; // Failed to parse
+  }
+
+  // 3. Convert the UTC calendar struct to an integer timestamp
+  return timegm(&tm_time);
+}
+
+static inline uint32_t parse_dns_ttl(const char* str, int len)
+{
+  uint32_t ttl = 0;
+
+  for (int i = 0; i < len; i++) {
+    // Ensure the character is actually a digit between 0 and 9
+    if (str[i] >= '0' && str[i] <= '9') {
+      // Shift the current number left by one decimal place,
+      // then add the integer value of the new character.
+      ttl = (ttl * 10) + (str[i] - '0');
+    }
+    else {
+      // If we hit a weird character (like an unexpected space), stop parsing
+      break;
+    }
+  }
+
+  return ttl;
+}
+
 KHASHL_SET_INIT(KH_LOCAL, str_set_t, str_set, kh_cstr_t, kh_hash_str, kh_eq_str);
 
 typedef struct
@@ -257,7 +356,39 @@ int main(int argc, char* argv[])
         khint_t k_pos = str_set_get(set_z2, start);
 
         if (k_pos != kh_end(set_z2)) {
-          continue;
+          const char* col_starts[2];
+          int col_lens[2];
+
+          int targets[] = {6, 7};
+          int found = get_multiple_columns(start, targets, 2, col_starts, col_lens);
+
+          if (found < 2) {
+            str_set_destroy(set_z2);
+            ldns_rr_list_deep_free(affected_rrsigs);
+            fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
+            exit(EXIT_FAILURE);
+          }
+          const char* s_orig_ttl = col_starts[0];
+          int s_orig_ttl_len = col_lens[0];
+          uint32_t orig_ttl = parse_dns_ttl(s_orig_ttl, s_orig_ttl_len);
+
+          const char* exp = col_starts[1];
+          int exp_len = col_lens[1];
+          time_t exp_t = parse_dnssec_time(exp, exp_len);
+
+          if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
+            ldns_rr* rrsig;
+            ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
+
+            if (status != LDNS_STATUS_OK) {
+              str_set_destroy(set_z2);
+              ldns_rr_list_deep_free(affected_rrsigs);
+              fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
+              exit(EXIT_FAILURE);
+            }
+
+            ldns_rr_list_push_rr(affected_rrsigs, rrsig);
+          }
         }
         start = p + 1;
       }
@@ -266,179 +397,127 @@ int main(int argc, char* argv[])
 
   str_set_destroy(set_z2);
 
+  printf("Opening file for writing: '%s'\n", output_fn);
+  FILE* fp = fopen(output_fn, "a");
+  if (!fp) {
+    fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
+    return LDNS_STATUS_FILE_ERR;
+  }
+
+  // add each affected_rrsigs to the bloom filter
+  struct bloom bloom;
+  size_t rrsig_num = ldns_rr_list_rr_count(affected_rrsigs);
+
+  printf("Num rrsig: %zu \n", rrsig_num);
+
+  if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
+    fprintf(stderr, "Error initializing bloom filter\n");
+    exit(EXIT_FAILURE);
+  }
+
+  for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
+    ldns_rr* rr = ldns_rr_list_rr(affected_rrsigs, i);
+    uint8_t* wire = NULL;
+    size_t size = 0;
+    if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
+      bloom_add(&bloom, wire, (int)size);
+      LDNS_FREE(wire);
+    }
+  }
+
+  if (domain_name == NULL) {
+    fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
+    ldns_rr_list_deep_free(affected_rrsigs);
+    exit(EXIT_FAILURE);
+  }
+
+  // 1. Create TXT record owner name: YYYYMMDD._filter,<signer name>
+  size_t domain_len = strlen(domain_name);
+  // "_filter." (8) + YYYYMMDD (8) + "." (1) + domain + null (1) = 18 + domain_len
+  size_t owner_len = 18 + domain_len;
+  char* owner_name = malloc(owner_len);
+  if (!owner_name) {
+    perror("malloc");
+    ldns_rr_list_deep_free(affected_rrsigs);
+    exit(EXIT_FAILURE);
+  }
+
+  // convert key to YYYYMMDD format
+  time_t t_current = (time_t)current_time;
+  struct tm tm_latest_epoch;
+  gmtime_r(&t_current, &tm_latest_epoch);
+
+  snprintf(owner_name, owner_len, "%04d%02d%02d._filter.%s",
+           tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday, domain_name);
+
+  // 2. Prepare header: r=86400 * 2;a=0;d=
+  char* header_buf = NULL;
+  int header_len = asprintf(&header_buf, "r=%u;a=0;d=", exp_buffer_sec);
+
+  if (header_len < 0) {
+    perror("asprintf");
+    ldns_rr_list_deep_free(affected_rrsigs);
+    free(owner_name);
+    exit(EXIT_FAILURE);
+  }
+
+  // 3. Combine header and bloom filter bytes into one buffer
+  size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
+  uint8_t* full_data = malloc(full_len);
+  if (!full_data) {
+    perror("malloc");
+    free(header_buf);
+    ldns_rr_list_deep_free(affected_rrsigs);
+    free(owner_name);
+    exit(EXIT_FAILURE);
+  }
+  memcpy(full_data, header_buf, header_len);
+  free(header_buf);
+  memcpy(full_data + header_len, &bloom, sizeof(struct bloom));
+  memcpy(full_data + header_len + sizeof(struct bloom), bloom.bf, bloom.bytes);
+
+  // 4. Create the TXT RR
+  ldns_rr* txt_rr = ldns_rr_new();
+  ldns_rr_set_type(txt_rr, LDNS_RR_TYPE_TXT);
+  ldns_rr_set_class(txt_rr, LDNS_RR_CLASS_IN);
+  ldns_rr_set_ttl(txt_rr, ttl);
+
+  ldns_rdf* owner_rdf = ldns_rdf_new_frm_str(LDNS_RDF_TYPE_DNAME, owner_name);
+  ldns_rr_set_owner(txt_rr, owner_rdf);
+
+  // 5. Add data as 255-byte chunks
+  size_t offset = 0;
+  while (offset < full_len) {
+    size_t chunk_size = (full_len - offset) > 255 ? 255 : (full_len - offset);
+
+    // Prepend length byte for LDNS_RDF_TYPE_STR wire format
+    uint8_t chunk_buf[256];
+    chunk_buf[0] = (uint8_t)chunk_size;
+    memcpy(chunk_buf + 1, full_data + offset, chunk_size);
+
+    ldns_rdf* rdf = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_STR, chunk_size + 1, chunk_buf);
+    ldns_rr_push_rdf(txt_rr, rdf);
+    offset += chunk_size;
+  }
+
+  ldns_rr_print(fp, txt_rr);
+  if (ferror(fp)) {
+    perror("Error writing to file");
+  }
+  else {
+    printf("Successfully wrote to %s\n", owner_name);
+  }
+
+  ldns_rr_free(txt_rr);
+  free(full_data);
+  free(owner_name);
+
+  bloom_free(&bloom);
+
+  fclose(fp);
+
+  ldns_rr_list_free(affected_rrsigs);
+
+  ldns_rr_list_deep_free(affected_rrsigs);
   exit(EXIT_SUCCESS);
-
-  // ldns_rr_list* sigs1 = ldns_rr_list_new();
-  // printf("Reading Zone 1: %s\n", fn1);
-  // if (load_rrsigs(fn1, &sigs1, rrsig_file)) {
-  //   ldns_rr_list_deep_free(sigs1);
-  //   exit(EXIT_FAILURE);
-  // }
-  // printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs1), fn1);
-  //
-  // fn2 = argv[1];
-  // ldns_rr_list* sigs2 = ldns_rr_list_new();
-  // printf("Reading Zone 2: %s\n", fn2);
-  // if (load_rrsigs(fn2, &sigs2, rrsig_file)) {
-  //   ldns_rr_list_deep_free(sigs2);
-  //   exit(EXIT_FAILURE);
-  // }
-  // printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs2), fn2);
-  //
-  // rr_set_t* set_z2 = rr_set_init();
-  // int absent_set;
-  // printf("Building Hash Set from Zone 2...\n");
-  //
-  // for (size_t i = 0; i < ldns_rr_list_rr_count(sigs2); i++) {
-  //   ldns_rr* rr = ldns_rr_list_rr(sigs2, i);
-  //   rr_set_put(set_z2, rr, &absent_set);
-  // }
-  //
-  // ldns_rr_list* affected_rrsigs = ldns_rr_list_new();
-  //
-  // printf("Filtering Zone 1 against Zone 2 (Hash Set)...\n");
-  //
-  // for (size_t i = 0; i < ldns_rr_list_rr_count(sigs1); i++) {
-  //   ldns_rr* rrsig1 = ldns_rr_list_rr(sigs1, i);
-  //   khint_t k_pos = rr_set_get(set_z2, rrsig1);
-  //
-  //   if (k_pos != kh_end(set_z2)) {
-  //     continue;
-  //   }
-  //
-  //   uint32_t orig_ttl = ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rrsig1));
-  //   uint32_t rrsig_exp = ldns_rdf2native_int32(ldns_rr_rrsig_expiration(rrsig1));
-  //
-  //   if ((current_time + orig_ttl) < rrsig_exp && current_time < rrsig_exp - exp_buffer_sec) {
-  //     ldns_rr_list_push_rr(affected_rrsigs, ldns_rr_clone(rrsig1));
-  //   }
-  // }
-  //
-  // rr_set_destroy(set_z2);
-  // ldns_rr_list_deep_free(sigs2);
-  // ldns_rr_list_deep_free(sigs1);
-  //
-  // printf("Opening file for writing: '%s'\n", output_fn);
-  // FILE* fp = fopen(output_fn, "a");
-  // if (!fp) {
-  //   fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
-  //   return LDNS_STATUS_FILE_ERR;
-  // }
-
-  // // add each affected_rrsigs to the bloom filter
-  // struct bloom bloom;
-  // size_t rrsig_num = ldns_rr_list_rr_count(affected_rrsigs);
-  //
-  // printf("Num rrsig: %zu \n", rrsig_num);
-  //
-  // if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
-  //   fprintf(stderr, "Error initializing bloom filter\n");
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
-  //   ldns_rr* rr = ldns_rr_list_rr(affected_rrsigs, i);
-  //   uint8_t* wire = NULL;
-  //   size_t size = 0;
-  //   if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
-  //     bloom_add(&bloom, wire, (int)size);
-  //     LDNS_FREE(wire);
-  //   }
-  // }
-  //
-  // if (domain_name == NULL) {
-  //   fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
-  //   ldns_rr_list_deep_free(affected_rrsigs);
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // // 1. Create TXT record owner name: YYYYMMDD._filter,<signer name>
-  // size_t domain_len = strlen(domain_name);
-  // // "_filter." (8) + YYYYMMDD (8) + "." (1) + domain + null (1) = 18 + domain_len
-  // size_t owner_len = 18 + domain_len;
-  // char* owner_name = malloc(owner_len);
-  // if (!owner_name) {
-  //   perror("malloc");
-  //   ldns_rr_list_deep_free(affected_rrsigs);
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // // convert key to YYYYMMDD format
-  // time_t t_current = (time_t)current_time;
-  // struct tm tm_latest_epoch;
-  // gmtime_r(&t_current, &tm_latest_epoch);
-  //
-  // snprintf(owner_name, owner_len, "%04d%02d%02d._filter.%s",
-  //          tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday, domain_name);
-  //
-  // // 2. Prepare header: r=86400 * 2;a=0;d=
-  // char* header_buf = NULL;
-  // int header_len = asprintf(&header_buf, "r=%u;a=0;d=", exp_buffer_sec);
-  //
-  // if (header_len < 0) {
-  //   perror("asprintf");
-  //   ldns_rr_list_deep_free(affected_rrsigs);
-  //   free(owner_name);
-  //   exit(EXIT_FAILURE);
-  // }
-  //
-  // // 3. Combine header and bloom filter bytes into one buffer
-  // size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
-  // uint8_t* full_data = malloc(full_len);
-  // if (!full_data) {
-  //   perror("malloc");
-  //   free(header_buf);
-  //   ldns_rr_list_deep_free(affected_rrsigs);
-  //   free(owner_name);
-  //   exit(EXIT_FAILURE);
-  // }
-  // memcpy(full_data, header_buf, header_len);
-  // free(header_buf);
-  // memcpy(full_data + header_len, &bloom, sizeof(struct bloom));
-  // memcpy(full_data + header_len + sizeof(struct bloom), bloom.bf, bloom.bytes);
-  //
-  // // 4. Create the TXT RR
-  // ldns_rr* txt_rr = ldns_rr_new();
-  // ldns_rr_set_type(txt_rr, LDNS_RR_TYPE_TXT);
-  // ldns_rr_set_class(txt_rr, LDNS_RR_CLASS_IN);
-  // ldns_rr_set_ttl(txt_rr, ttl);
-  //
-  // ldns_rdf* owner_rdf = ldns_rdf_new_frm_str(LDNS_RDF_TYPE_DNAME, owner_name);
-  // ldns_rr_set_owner(txt_rr, owner_rdf);
-  //
-  // // 5. Add data as 255-byte chunks
-  // size_t offset = 0;
-  // while (offset < full_len) {
-  //   size_t chunk_size = (full_len - offset) > 255 ? 255 : (full_len - offset);
-  //
-  //   // Prepend length byte for LDNS_RDF_TYPE_STR wire format
-  //   uint8_t chunk_buf[256];
-  //   chunk_buf[0] = (uint8_t)chunk_size;
-  //   memcpy(chunk_buf + 1, full_data + offset, chunk_size);
-  //
-  //   ldns_rdf* rdf = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_STR, chunk_size + 1, chunk_buf);
-  //   ldns_rr_push_rdf(txt_rr, rdf);
-  //   offset += chunk_size;
-  // }
-  //
-  // ldns_rr_print(fp, txt_rr);
-  // if (ferror(fp)) {
-  //   perror("Error writing to file");
-  // }
-  // else {
-  //   printf("Successfully wrote to %s\n", owner_name);
-  // }
-  //
-  // ldns_rr_free(txt_rr);
-  // free(full_data);
-  // free(owner_name);
-  //
-  // bloom_free(&bloom);
-  //
-  // fclose(fp);
-  //
-  // ldns_rr_list_free(affected_rrsigs);
-  //
-  // ldns_rr_list_deep_free(affected_rrsigs);
-  // exit(EXIT_SUCCESS);
 }
