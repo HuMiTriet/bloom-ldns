@@ -356,7 +356,7 @@ int main(int argc, char* argv[])
           const char* col_starts[2];
           int col_lens[2];
 
-          int targets[] = {6, 7};
+          int targets[] = {7, 8};
           int found = get_multiple_columns(start, targets, 2, col_starts, col_lens);
 
           if (found < 2) {
@@ -373,8 +373,7 @@ int main(int argc, char* argv[])
           int exp_len = col_lens[1];
           time_t exp_t = parse_dnssec_time(exp, exp_len);
 
-          // if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
-          if (true) {
+          if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
             ldns_rr* rrsig;
             ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
 
