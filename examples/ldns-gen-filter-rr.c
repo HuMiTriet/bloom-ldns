@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include "bloom_filter/bloom.h"
+#include "ldns/buffer.h"
 #include "ldns/error.h"
 #include "ldns/host2str.h"
 #include "ldns/host2wire.h"
@@ -372,7 +373,8 @@ int main(int argc, char* argv[])
           int exp_len = col_lens[1];
           time_t exp_t = parse_dnssec_time(exp, exp_len);
 
-          if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
+          // if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
+          if (true) {
             ldns_rr* rrsig;
             ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
 
@@ -411,15 +413,15 @@ int main(int argc, char* argv[])
     exit(EXIT_FAILURE);
   }
 
+  ldns_buffer* b = ldns_buffer_new(LDNS_MAX_PACKETLEN);
   for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
     ldns_rr* rr = ldns_rr_list_rr(affected_rrsigs, i);
-    uint8_t* wire = NULL;
-    size_t size = 0;
-    if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
-      bloom_add(&bloom, wire, (int)size);
-      LDNS_FREE(wire);
+    ldns_buffer_clear(b);
+    if (ldns_rr_rdata2buffer_wire(b, rr) == LDNS_STATUS_OK) {
+      bloom_add(&bloom, ldns_buffer_begin(b), (int)ldns_buffer_position(b));
     }
   }
+  ldns_buffer_free(b);
 
   if (domain_name == NULL) {
     fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
