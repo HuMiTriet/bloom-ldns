@@ -197,9 +197,10 @@ typedef enum ldns_enum_filter_algorithm
 } ldns_filter_algorithms;
 
 ldns_lookup_table filter_algorithms[] = {
-  {BLOOM_FILTER, "Bloom filter"},
-  {GOLOMB_COMPRESSED_SET, "Golomb compressed set"},
-  {BINARY_FUSE_FILTER, "Binary fuse filter"}};
+  {BLOOM_FILTER, "bloom"},
+  {GOLOMB_COMPRESSED_SET, "gcs"},
+  {BINARY_FUSE_FILTER, "fuse"},
+  {0, NULL}};
 
 static void show_algorithms(FILE* out)
 {
@@ -234,19 +235,27 @@ int main(int argc, char* argv[])
   uint32_t exp_buffer_sec = 86400 * 2;
   char* domain_name = NULL;
   uint32_t ttl = 900;
+  prog = argv[0];
 
   const char* output_fn = "filter.txt";
 
   while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:h")) != -1) {
     switch (c) {
     case 'f':
-      if (filter != 0) {
-        fprintf(stderr, "The -f argument can only be used once\n");
-        exit(1);
-      }
       if (strncmp(optarg, "list", 5) == 0) {
         show_algorithms(stdout);
         exit(EXIT_SUCCESS);
+      }
+      {
+        ldns_lookup_table* lt = ldns_lookup_by_name(filter_algorithms, optarg);
+        if (lt) {
+          filter = (ldns_filter_algorithms)lt->id;
+        }
+        else {
+          fprintf(stderr, "Unknown filter algorithm: %s\n", optarg);
+          show_algorithms(stderr);
+          exit(EXIT_FAILURE);
+        }
       }
       break;
     case 'c': {
@@ -362,6 +371,8 @@ int main(int argc, char* argv[])
           if (found < 2) {
             str_set_destroy(set_z2);
             ldns_rr_list_deep_free(affected_rrsigs);
+            unmap_file(&file1);
+            unmap_file(&file2);
             fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
             exit(EXIT_FAILURE);
           }
@@ -380,6 +391,8 @@ int main(int argc, char* argv[])
             if (status != LDNS_STATUS_OK) {
               str_set_destroy(set_z2);
               ldns_rr_list_deep_free(affected_rrsigs);
+              unmap_file(&file1);
+              unmap_file(&file2);
               fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
               exit(EXIT_FAILURE);
             }
@@ -398,7 +411,9 @@ int main(int argc, char* argv[])
   FILE* fp = fopen(output_fn, "a");
   if (!fp) {
     fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
-    return LDNS_STATUS_FILE_ERR;
+    unmap_file(&file1);
+    unmap_file(&file2);
+    return EXIT_FAILURE;
   }
 
   // add each affected_rrsigs to the bloom filter
@@ -409,6 +424,9 @@ int main(int argc, char* argv[])
 
   if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
     fprintf(stderr, "Error initializing bloom filter\n");
+    fclose(fp);
+    unmap_file(&file1);
+    unmap_file(&file2);
     exit(EXIT_FAILURE);
   }
 
@@ -425,6 +443,10 @@ int main(int argc, char* argv[])
   if (domain_name == NULL) {
     fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
     ldns_rr_list_deep_free(affected_rrsigs);
+    bloom_free(&bloom);
+    fclose(fp);
+    unmap_file(&file1);
+    unmap_file(&file2);
     exit(EXIT_FAILURE);
   }
 
@@ -436,6 +458,10 @@ int main(int argc, char* argv[])
   if (!owner_name) {
     perror("malloc");
     ldns_rr_list_deep_free(affected_rrsigs);
+    bloom_free(&bloom);
+    fclose(fp);
+    unmap_file(&file1);
+    unmap_file(&file2);
     exit(EXIT_FAILURE);
   }
 
@@ -454,6 +480,10 @@ int main(int argc, char* argv[])
   if (header_len < 0) {
     perror("asprintf");
     ldns_rr_list_deep_free(affected_rrsigs);
+    bloom_free(&bloom);
+    fclose(fp);
+    unmap_file(&file1);
+    unmap_file(&file2);
     free(owner_name);
     exit(EXIT_FAILURE);
   }
@@ -465,6 +495,10 @@ int main(int argc, char* argv[])
     perror("malloc");
     free(header_buf);
     ldns_rr_list_deep_free(affected_rrsigs);
+    bloom_free(&bloom);
+    fclose(fp);
+    unmap_file(&file1);
+    unmap_file(&file2);
     free(owner_name);
     exit(EXIT_FAILURE);
   }
@@ -480,6 +514,18 @@ int main(int argc, char* argv[])
   ldns_rr_set_ttl(txt_rr, ttl);
 
   ldns_rdf* owner_rdf = ldns_rdf_new_frm_str(LDNS_RDF_TYPE_DNAME, owner_name);
+  if (!owner_rdf) {
+    fprintf(stderr, "Error: Could not create owner name RDF for %s\n", owner_name);
+    ldns_rr_free(txt_rr);
+    free(full_data);
+    free(owner_name);
+    bloom_free(&bloom);
+    fclose(fp);
+    unmap_file(&file1);
+    unmap_file(&file2);
+    ldns_rr_list_deep_free(affected_rrsigs);
+    exit(EXIT_FAILURE);
+  }
   ldns_rr_set_owner(txt_rr, owner_rdf);
 
   // 5. Add data as 255-byte chunks
@@ -512,6 +558,9 @@ int main(int argc, char* argv[])
   bloom_free(&bloom);
 
   fclose(fp);
+
+  unmap_file(&file1);
+  unmap_file(&file2);
 
   ldns_rr_list_deep_free(affected_rrsigs);
   exit(EXIT_SUCCESS);
