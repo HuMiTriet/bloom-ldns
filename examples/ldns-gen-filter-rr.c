@@ -229,7 +229,7 @@ int main(int argc, char* argv[])
 {
 
   int c;
-  ldns_filter_algorithms filter = BLOOM_FILTER;
+  // ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0.2;
   uint32_t current_time = 0;
   uint32_t exp_buffer_sec = 86400 * 2;
@@ -241,23 +241,23 @@ int main(int argc, char* argv[])
 
   while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:h")) != -1) {
     switch (c) {
-    case 'f':
-      if (strncmp(optarg, "list", 5) == 0) {
-        show_algorithms(stdout);
-        exit(EXIT_SUCCESS);
-      }
-      {
-        ldns_lookup_table* lt = ldns_lookup_by_name(filter_algorithms, optarg);
-        if (lt) {
-          filter = (ldns_filter_algorithms)lt->id;
-        }
-        else {
-          fprintf(stderr, "Unknown filter algorithm: %s\n", optarg);
-          show_algorithms(stderr);
-          exit(EXIT_FAILURE);
-        }
-      }
-      break;
+    // case 'f':
+    //   if (strncmp(optarg, "list", 5) == 0) {
+    //     show_algorithms(stdout);
+    //     exit(EXIT_SUCCESS);
+    //   }
+    //   {
+    //     ldns_lookup_table* lt = ldns_lookup_by_name(filter_algorithms, optarg);
+    //     if (lt) {
+    //       filter = (ldns_filter_algorithms)lt->id;
+    //     }
+    //     else {
+    //       fprintf(stderr, "Unknown filter algorithm: %s\n", optarg);
+    //       show_algorithms(stderr);
+    //       exit(EXIT_FAILURE);
+    //     }
+    //   }
+    //   break;
     case 'c': {
       struct tm tm;
       memset(&tm, 0, sizeof(struct tm));
@@ -406,13 +406,13 @@ int main(int argc, char* argv[])
   }
 
   str_set_destroy(set_z2);
+  unmap_file(&file1);
+  unmap_file(&file2);
 
   printf("Opening file for writing: '%s'\n", output_fn);
   FILE* fp = fopen(output_fn, "a");
   if (!fp) {
     fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
-    unmap_file(&file1);
-    unmap_file(&file2);
     return EXIT_FAILURE;
   }
 
@@ -425,8 +425,6 @@ int main(int argc, char* argv[])
   if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
     fprintf(stderr, "Error initializing bloom filter\n");
     fclose(fp);
-    unmap_file(&file1);
-    unmap_file(&file2);
     exit(EXIT_FAILURE);
   }
 
@@ -445,8 +443,6 @@ int main(int argc, char* argv[])
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
     fclose(fp);
-    unmap_file(&file1);
-    unmap_file(&file2);
     exit(EXIT_FAILURE);
   }
 
@@ -460,8 +456,6 @@ int main(int argc, char* argv[])
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
     fclose(fp);
-    unmap_file(&file1);
-    unmap_file(&file2);
     exit(EXIT_FAILURE);
   }
 
@@ -482,8 +476,6 @@ int main(int argc, char* argv[])
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
     fclose(fp);
-    unmap_file(&file1);
-    unmap_file(&file2);
     free(owner_name);
     exit(EXIT_FAILURE);
   }
@@ -497,8 +489,6 @@ int main(int argc, char* argv[])
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
     fclose(fp);
-    unmap_file(&file1);
-    unmap_file(&file2);
     free(owner_name);
     exit(EXIT_FAILURE);
   }
@@ -521,8 +511,6 @@ int main(int argc, char* argv[])
     free(owner_name);
     bloom_free(&bloom);
     fclose(fp);
-    unmap_file(&file1);
-    unmap_file(&file2);
     ldns_rr_list_deep_free(affected_rrsigs);
     exit(EXIT_FAILURE);
   }
@@ -558,9 +546,6 @@ int main(int argc, char* argv[])
   bloom_free(&bloom);
 
   fclose(fp);
-
-  unmap_file(&file1);
-  unmap_file(&file2);
 
   ldns_rr_list_deep_free(affected_rrsigs);
   exit(EXIT_SUCCESS);
