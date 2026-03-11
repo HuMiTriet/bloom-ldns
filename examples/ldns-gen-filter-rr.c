@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include "bloom_filter/bloom.h"
 #include "examples/bloom_filter/murmurhash2.h"
 #include "ldns/error.h"
@@ -16,10 +17,8 @@
 #include "ldns/host2wire.h"
 #include "ldns/packet.h"
 #include "ldns/rdata.h"
-#include "ldns/rr.h"
 #include "ldns/rr_functions.h"
 #include "ldns/util.h"
-#include "ldns/zone.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -31,30 +30,60 @@
 
 #include "khashl.h"
 
-static inline int rr_hash_func(ldns_rr* rr)
+// KHASHL_SET_INIT(KH_LOCAL, rr_set_t, rr_set, ldns_rr*, rr_hash_func, rr_eq_func);
+KHASHL_SET_INIT(KH_LOCAL, str_set_t, str_set, kh_cstr_t, kh_hash_str, kh_eq_str);
+
+typedef struct
 {
-  ldns_rr2canonical(rr);
-  uint8_t* wire = NULL;
-  size_t size = 0;
-  uint32_t hash = 0;
-  if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
-    hash = murmurhash2(wire, (int)size, 0x9747b28c);
-    LDNS_FREE(wire);
-  }
-  else {
-    exit(EXIT_FAILURE);
+  char* data;
+  size_t size;
+  int fd;
+} mapped_file_t;
+
+mapped_file_t map_file_private(const char* filepath)
+{
+
+  mapped_file_t mf = {NULL, 0, -1};
+
+  mf.fd = open(filepath, O_RDONLY);
+  if (mf.fd < 0) {
+    perror("Error opening file");
+    return mf;
   }
 
-  return hash;
+  struct stat st;
+  if (fstat(mf.fd, &st) < 0) {
+    perror("Error getting file size");
+    close(mf.fd);
+    mf.fd = -1;
+    return mf;
+  }
+  mf.size = st.st_size;
+
+  if (mf.size == 0) {
+    return mf; // Valid, but empty file
+  }
+
+  // PROT_WRITE + MAP_PRIVATE is the magic combination here.
+  // It allows us to mutate the memory (change \n to \0) without altering the file on disk.
+  mf.data = mmap(NULL, mf.size, PROT_READ | PROT_WRITE, MAP_PRIVATE, mf.fd, 0);
+  if (mf.data == MAP_FAILED) {
+    perror("Error mapping file");
+    close(mf.fd);
+    mf.fd = -1;
+    mf.data = NULL;
+  }
+
+  return mf;
 }
 
-static inline int rr_eq_func(const ldns_rr* a, const ldns_rr* b)
+void unmap_file(mapped_file_t* mf)
 {
-  return ldns_rr_compare(a, b) == 0; // Returns 1 if equal
+  if (mf->data && mf->size > 0)
+    munmap(mf->data, mf->size);
+  if (mf->fd >= 0)
+    close(mf->fd);
 }
-
-KHASHL_SET_INIT(KH_LOCAL, rr_set_t, rr_set, ldns_rr*, rr_hash_func, rr_eq_func);
-
 char* prog;
 int verbosity = 2;
 
@@ -93,47 +122,6 @@ static void usage(FILE* fp, char* prog)
   fprintf(fp, "  -c current time (usually the start of the date of the second zone file)\n");
 
   fprintf(fp, "  output multiple files prefixed with _filter. One file for each expiration date in the zone\n");
-}
-
-ldns_status load_rrsigs(const char* filename, ldns_rr_list** rrsig_list, bool rrsig_file)
-{
-  FILE* fp = fopen(filename, "r");
-
-  if (!fp) {
-    fprintf(stderr, "Unable to open %s: %s\n", filename, strerror(errno));
-    return LDNS_STATUS_FILE_ERR;
-  }
-
-  ldns_rr* rr = NULL;
-  ldns_status status = LDNS_STATUS_OK;
-  int line_nr = 0;
-  if (rrsig_file) {
-    ldns_zone* zone = NULL;
-    status = ldns_zone_new_frm_fp_l(&zone, fp, NULL, 3600, LDNS_RR_CLASS_IN, &line_nr);
-    *rrsig_list = ldns_zone_rrs(zone);
-  }
-  else {
-    while ((status = ldns_rr_new_frm_fp_l(&rr, fp, NULL, NULL, NULL, &line_nr)) == LDNS_STATUS_OK) {
-      if (!rr)
-        continue;
-
-      if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_RRSIG) {
-        ldns_rr_list_push_rr(*rrsig_list, rr);
-      }
-      else {
-        ldns_rr_free(rr);
-      }
-    }
-  }
-
-  if (status != LDNS_STATUS_SYNTAX_EMPTY && status != LDNS_STATUS_OK) {
-    fprintf(stderr, "Warning: Parsing ended with status %s at line %d in %s\n",
-            ldns_get_errorstr_by_id(status), line_nr, filename);
-  }
-
-  fclose(fp);
-
-  return LDNS_STATUS_OK;
 }
 
 int main(int argc, char* argv[])
@@ -227,177 +215,230 @@ int main(int argc, char* argv[])
 
   char *fn1, *fn2;
   fn1 = argv[0];
-  ldns_rr_list* sigs1 = ldns_rr_list_new();
-  printf("Reading Zone 1: %s\n", fn1);
-  if (load_rrsigs(fn1, &sigs1, rrsig_file)) {
-    ldns_rr_list_deep_free(sigs1);
-    exit(EXIT_FAILURE);
-  }
-  printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs1), fn1);
-
   fn2 = argv[1];
-  ldns_rr_list* sigs2 = ldns_rr_list_new();
-  printf("Reading Zone 2: %s\n", fn2);
-  if (load_rrsigs(fn2, &sigs2, rrsig_file)) {
-    ldns_rr_list_deep_free(sigs2);
+
+  mapped_file_t file2 = map_file_private(fn2);
+  if (!file2.data && file2.size > 0)
     exit(EXIT_FAILURE);
+
+  str_set_t* set_z2 = str_set_init();
+  if (file2.size > 0) {
+    char* start = file2.data;
+    char* end = file2.data + file2.size;
+    int absent;
+
+    for (char* p = file2.data; p < end; p++) {
+      if (*p == '\n') {
+        *p = '\0'; // Mutate newline to null-terminator
+        // kh_str_t_put(h, start, &absent); // Insert pointer directly into set
+        str_set_put(set_z2, start, &absent);
+        start = p + 1;
+      }
+    }
   }
-  printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs2), fn2);
 
-  rr_set_t* set_z2 = rr_set_init();
-  int absent_set;
-  printf("Building Hash Set from Zone 2...\n");
-
-  for (size_t i = 0; i < ldns_rr_list_rr_count(sigs2); i++) {
-    ldns_rr* rr = ldns_rr_list_rr(sigs2, i);
-    rr_set_put(set_z2, rr, &absent_set);
+  mapped_file_t file1 = map_file_private(fn1);
+  if (!file1.data && file1.size > 0) {
+    unmap_file(&file2);
+    str_set_destroy(set_z2);
+    exit(EXIT_FAILURE);
   }
 
   ldns_rr_list* affected_rrsigs = ldns_rr_list_new();
+  if (file1.size > 0) {
+    char* start = file1.data;
+    char* end = file1.data + file1.size;
 
-  printf("Filtering Zone 1 against Zone 2 (Hash Set)...\n");
+    for (char* p = file1.data; p < end; p++) {
+      if (*p == '\n') {
+        *p = '\0'; // Mutate newline to null-terminator
 
-  for (size_t i = 0; i < ldns_rr_list_rr_count(sigs1); i++) {
-    ldns_rr* rrsig1 = ldns_rr_list_rr(sigs1, i);
-    khint_t k_pos = rr_set_get(set_z2, rrsig1);
+        // Query the set
+        khint_t k_pos = str_set_get(set_z2, start);
 
-    if (k_pos != kh_end(set_z2)) {
-      continue;
-    }
-
-    uint32_t orig_ttl = ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rrsig1));
-    uint32_t rrsig_exp = ldns_rdf2native_int32(ldns_rr_rrsig_expiration(rrsig1));
-
-    if ((current_time + orig_ttl) < rrsig_exp && current_time < rrsig_exp - exp_buffer_sec) {
-      ldns_rr_list_push_rr(affected_rrsigs, ldns_rr_clone(rrsig1));
-    }
-  }
-
-  rr_set_destroy(set_z2);
-  ldns_rr_list_deep_free(sigs2);
-  ldns_rr_list_deep_free(sigs1);
-
-  printf("Opening file for writing: '%s'\n", output_fn);
-  FILE* fp = fopen(output_fn, "a");
-  if (!fp) {
-    fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
-    return LDNS_STATUS_FILE_ERR;
-  }
-
-  // add each affected_rrsigs to the bloom filter
-  struct bloom bloom;
-  size_t rrsig_num = ldns_rr_list_rr_count(affected_rrsigs);
-
-  printf("Num rrsig: %zu \n", rrsig_num);
-
-  if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
-    fprintf(stderr, "Error initializing bloom filter\n");
-    exit(EXIT_FAILURE);
-  }
-
-  for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
-    ldns_rr* rr = ldns_rr_list_rr(affected_rrsigs, i);
-    uint8_t* wire = NULL;
-    size_t size = 0;
-    if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
-      bloom_add(&bloom, wire, (int)size);
-      LDNS_FREE(wire);
+        if (k_pos != kh_end(set_z2)) {
+          continue;
+        }
+        start = p + 1;
+      }
     }
   }
 
-  if (domain_name == NULL) {
-    fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
-    ldns_rr_list_deep_free(affected_rrsigs);
-    exit(EXIT_FAILURE);
-  }
+  str_set_destroy(set_z2);
 
-  // 1. Create TXT record owner name: YYYYMMDD._filter,<signer name>
-  size_t domain_len = strlen(domain_name);
-  // "_filter." (8) + YYYYMMDD (8) + "." (1) + domain + null (1) = 18 + domain_len
-  size_t owner_len = 18 + domain_len;
-  char* owner_name = malloc(owner_len);
-  if (!owner_name) {
-    perror("malloc");
-    ldns_rr_list_deep_free(affected_rrsigs);
-    exit(EXIT_FAILURE);
-  }
-
-  // convert key to YYYYMMDD format
-  time_t t_current = (time_t)current_time;
-  struct tm tm_latest_epoch;
-  gmtime_r(&t_current, &tm_latest_epoch);
-
-  snprintf(owner_name, owner_len, "%04d%02d%02d._filter.%s",
-           tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday, domain_name);
-
-  // 2. Prepare header: r=86400 * 2;a=0;d=
-  char* header_buf = NULL;
-  int header_len = asprintf(&header_buf, "r=%u;a=0;d=", exp_buffer_sec);
-
-  if (header_len < 0) {
-    perror("asprintf");
-    ldns_rr_list_deep_free(affected_rrsigs);
-    free(owner_name);
-    exit(EXIT_FAILURE);
-  }
-
-  // 3. Combine header and bloom filter bytes into one buffer
-  size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
-  uint8_t* full_data = malloc(full_len);
-  if (!full_data) {
-    perror("malloc");
-    free(header_buf);
-    ldns_rr_list_deep_free(affected_rrsigs);
-    free(owner_name);
-    exit(EXIT_FAILURE);
-  }
-  memcpy(full_data, header_buf, header_len);
-  free(header_buf);
-  memcpy(full_data + header_len, &bloom, sizeof(struct bloom));
-  memcpy(full_data + header_len + sizeof(struct bloom), bloom.bf, bloom.bytes);
-
-  // 4. Create the TXT RR
-  ldns_rr* txt_rr = ldns_rr_new();
-  ldns_rr_set_type(txt_rr, LDNS_RR_TYPE_TXT);
-  ldns_rr_set_class(txt_rr, LDNS_RR_CLASS_IN);
-  ldns_rr_set_ttl(txt_rr, ttl);
-
-  ldns_rdf* owner_rdf = ldns_rdf_new_frm_str(LDNS_RDF_TYPE_DNAME, owner_name);
-  ldns_rr_set_owner(txt_rr, owner_rdf);
-
-  // 5. Add data as 255-byte chunks
-  size_t offset = 0;
-  while (offset < full_len) {
-    size_t chunk_size = (full_len - offset) > 255 ? 255 : (full_len - offset);
-
-    // Prepend length byte for LDNS_RDF_TYPE_STR wire format
-    uint8_t chunk_buf[256];
-    chunk_buf[0] = (uint8_t)chunk_size;
-    memcpy(chunk_buf + 1, full_data + offset, chunk_size);
-
-    ldns_rdf* rdf = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_STR, chunk_size + 1, chunk_buf);
-    ldns_rr_push_rdf(txt_rr, rdf);
-    offset += chunk_size;
-  }
-
-  ldns_rr_print(fp, txt_rr);
-  if (ferror(fp)) {
-    perror("Error writing to file");
-  }
-  else {
-    printf("Successfully wrote to %s\n", owner_name);
-  }
-
-  ldns_rr_free(txt_rr);
-  free(full_data);
-  free(owner_name);
-
-  bloom_free(&bloom);
-
-  fclose(fp);
-
-  ldns_rr_list_free(affected_rrsigs);
-
-  ldns_rr_list_deep_free(affected_rrsigs);
   exit(EXIT_SUCCESS);
+
+  // ldns_rr_list* sigs1 = ldns_rr_list_new();
+  // printf("Reading Zone 1: %s\n", fn1);
+  // if (load_rrsigs(fn1, &sigs1, rrsig_file)) {
+  //   ldns_rr_list_deep_free(sigs1);
+  //   exit(EXIT_FAILURE);
+  // }
+  // printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs1), fn1);
+  //
+  // fn2 = argv[1];
+  // ldns_rr_list* sigs2 = ldns_rr_list_new();
+  // printf("Reading Zone 2: %s\n", fn2);
+  // if (load_rrsigs(fn2, &sigs2, rrsig_file)) {
+  //   ldns_rr_list_deep_free(sigs2);
+  //   exit(EXIT_FAILURE);
+  // }
+  // printf("Loaded %zu RRSIGs from %s\n", ldns_rr_list_rr_count(sigs2), fn2);
+  //
+  // rr_set_t* set_z2 = rr_set_init();
+  // int absent_set;
+  // printf("Building Hash Set from Zone 2...\n");
+  //
+  // for (size_t i = 0; i < ldns_rr_list_rr_count(sigs2); i++) {
+  //   ldns_rr* rr = ldns_rr_list_rr(sigs2, i);
+  //   rr_set_put(set_z2, rr, &absent_set);
+  // }
+  //
+  // ldns_rr_list* affected_rrsigs = ldns_rr_list_new();
+  //
+  // printf("Filtering Zone 1 against Zone 2 (Hash Set)...\n");
+  //
+  // for (size_t i = 0; i < ldns_rr_list_rr_count(sigs1); i++) {
+  //   ldns_rr* rrsig1 = ldns_rr_list_rr(sigs1, i);
+  //   khint_t k_pos = rr_set_get(set_z2, rrsig1);
+  //
+  //   if (k_pos != kh_end(set_z2)) {
+  //     continue;
+  //   }
+  //
+  //   uint32_t orig_ttl = ldns_rdf2native_int32(ldns_rr_rrsig_origttl(rrsig1));
+  //   uint32_t rrsig_exp = ldns_rdf2native_int32(ldns_rr_rrsig_expiration(rrsig1));
+  //
+  //   if ((current_time + orig_ttl) < rrsig_exp && current_time < rrsig_exp - exp_buffer_sec) {
+  //     ldns_rr_list_push_rr(affected_rrsigs, ldns_rr_clone(rrsig1));
+  //   }
+  // }
+  //
+  // rr_set_destroy(set_z2);
+  // ldns_rr_list_deep_free(sigs2);
+  // ldns_rr_list_deep_free(sigs1);
+  //
+  // printf("Opening file for writing: '%s'\n", output_fn);
+  // FILE* fp = fopen(output_fn, "a");
+  // if (!fp) {
+  //   fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
+  //   return LDNS_STATUS_FILE_ERR;
+  // }
+
+  // // add each affected_rrsigs to the bloom filter
+  // struct bloom bloom;
+  // size_t rrsig_num = ldns_rr_list_rr_count(affected_rrsigs);
+  //
+  // printf("Num rrsig: %zu \n", rrsig_num);
+  //
+  // if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
+  //   fprintf(stderr, "Error initializing bloom filter\n");
+  //   exit(EXIT_FAILURE);
+  // }
+  //
+  // for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
+  //   ldns_rr* rr = ldns_rr_list_rr(affected_rrsigs, i);
+  //   uint8_t* wire = NULL;
+  //   size_t size = 0;
+  //   if (ldns_rr2wire(&wire, rr, LDNS_SECTION_ANSWER, &size) == LDNS_STATUS_OK) {
+  //     bloom_add(&bloom, wire, (int)size);
+  //     LDNS_FREE(wire);
+  //   }
+  // }
+  //
+  // if (domain_name == NULL) {
+  //   fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
+  //   ldns_rr_list_deep_free(affected_rrsigs);
+  //   exit(EXIT_FAILURE);
+  // }
+  //
+  // // 1. Create TXT record owner name: YYYYMMDD._filter,<signer name>
+  // size_t domain_len = strlen(domain_name);
+  // // "_filter." (8) + YYYYMMDD (8) + "." (1) + domain + null (1) = 18 + domain_len
+  // size_t owner_len = 18 + domain_len;
+  // char* owner_name = malloc(owner_len);
+  // if (!owner_name) {
+  //   perror("malloc");
+  //   ldns_rr_list_deep_free(affected_rrsigs);
+  //   exit(EXIT_FAILURE);
+  // }
+  //
+  // // convert key to YYYYMMDD format
+  // time_t t_current = (time_t)current_time;
+  // struct tm tm_latest_epoch;
+  // gmtime_r(&t_current, &tm_latest_epoch);
+  //
+  // snprintf(owner_name, owner_len, "%04d%02d%02d._filter.%s",
+  //          tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday, domain_name);
+  //
+  // // 2. Prepare header: r=86400 * 2;a=0;d=
+  // char* header_buf = NULL;
+  // int header_len = asprintf(&header_buf, "r=%u;a=0;d=", exp_buffer_sec);
+  //
+  // if (header_len < 0) {
+  //   perror("asprintf");
+  //   ldns_rr_list_deep_free(affected_rrsigs);
+  //   free(owner_name);
+  //   exit(EXIT_FAILURE);
+  // }
+  //
+  // // 3. Combine header and bloom filter bytes into one buffer
+  // size_t full_len = header_len + sizeof(struct bloom) + bloom.bytes;
+  // uint8_t* full_data = malloc(full_len);
+  // if (!full_data) {
+  //   perror("malloc");
+  //   free(header_buf);
+  //   ldns_rr_list_deep_free(affected_rrsigs);
+  //   free(owner_name);
+  //   exit(EXIT_FAILURE);
+  // }
+  // memcpy(full_data, header_buf, header_len);
+  // free(header_buf);
+  // memcpy(full_data + header_len, &bloom, sizeof(struct bloom));
+  // memcpy(full_data + header_len + sizeof(struct bloom), bloom.bf, bloom.bytes);
+  //
+  // // 4. Create the TXT RR
+  // ldns_rr* txt_rr = ldns_rr_new();
+  // ldns_rr_set_type(txt_rr, LDNS_RR_TYPE_TXT);
+  // ldns_rr_set_class(txt_rr, LDNS_RR_CLASS_IN);
+  // ldns_rr_set_ttl(txt_rr, ttl);
+  //
+  // ldns_rdf* owner_rdf = ldns_rdf_new_frm_str(LDNS_RDF_TYPE_DNAME, owner_name);
+  // ldns_rr_set_owner(txt_rr, owner_rdf);
+  //
+  // // 5. Add data as 255-byte chunks
+  // size_t offset = 0;
+  // while (offset < full_len) {
+  //   size_t chunk_size = (full_len - offset) > 255 ? 255 : (full_len - offset);
+  //
+  //   // Prepend length byte for LDNS_RDF_TYPE_STR wire format
+  //   uint8_t chunk_buf[256];
+  //   chunk_buf[0] = (uint8_t)chunk_size;
+  //   memcpy(chunk_buf + 1, full_data + offset, chunk_size);
+  //
+  //   ldns_rdf* rdf = ldns_rdf_new_frm_data(LDNS_RDF_TYPE_STR, chunk_size + 1, chunk_buf);
+  //   ldns_rr_push_rdf(txt_rr, rdf);
+  //   offset += chunk_size;
+  // }
+  //
+  // ldns_rr_print(fp, txt_rr);
+  // if (ferror(fp)) {
+  //   perror("Error writing to file");
+  // }
+  // else {
+  //   printf("Successfully wrote to %s\n", owner_name);
+  // }
+  //
+  // ldns_rr_free(txt_rr);
+  // free(full_data);
+  // free(owner_name);
+  //
+  // bloom_free(&bloom);
+  //
+  // fclose(fp);
+  //
+  // ldns_rr_list_free(affected_rrsigs);
+  //
+  // ldns_rr_list_deep_free(affected_rrsigs);
+  // exit(EXIT_SUCCESS);
 }
