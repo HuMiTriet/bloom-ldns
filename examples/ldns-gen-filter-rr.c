@@ -229,7 +229,6 @@ int main(int argc, char* argv[])
   int c;
   ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0.2;
-  bool rrsig_file = false;
   uint32_t current_time = 0;
   uint32_t exp_buffer_sec = 86400 * 2;
   char* domain_name = NULL;
@@ -269,9 +268,6 @@ int main(int argc, char* argv[])
       break;
     case 'p':
       false_positive = atof(optarg);
-      break;
-    case 'r':
-      rrsig_file = true;
       break;
 
     case 'd':
@@ -355,7 +351,7 @@ int main(int argc, char* argv[])
         // Query the set
         khint_t k_pos = str_set_get(set_z2, start);
 
-        if (k_pos != kh_end(set_z2)) {
+        if (k_pos == kh_end(set_z2)) {
           const char* col_starts[2];
           int col_lens[2];
 
@@ -515,8 +511,6 @@ int main(int argc, char* argv[])
   bloom_free(&bloom);
 
   fclose(fp);
-
-  ldns_rr_list_free(affected_rrsigs);
 
   ldns_rr_list_deep_free(affected_rrsigs);
   exit(EXIT_SUCCESS);
