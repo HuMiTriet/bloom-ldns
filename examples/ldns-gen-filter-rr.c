@@ -384,21 +384,34 @@ int main(int argc, char* argv[])
           int exp_len = col_lens[1];
           time_t exp_t = parse_dnssec_time(exp, exp_len);
 
-          if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
-            ldns_rr* rrsig;
-            ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
+          ldns_rr* rrsig;
+          ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
 
-            if (status != LDNS_STATUS_OK) {
-              str_set_destroy(set_z2);
-              ldns_rr_list_deep_free(affected_rrsigs);
-              unmap_file(&file1);
-              unmap_file(&file2);
-              fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
-              exit(EXIT_FAILURE);
-            }
-
-            ldns_rr_list_push_rr(affected_rrsigs, rrsig);
+          if (status != LDNS_STATUS_OK) {
+            str_set_destroy(set_z2);
+            ldns_rr_list_deep_free(affected_rrsigs);
+            unmap_file(&file1);
+            unmap_file(&file2);
+            fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
+            exit(EXIT_FAILURE);
           }
+
+          ldns_rr_list_push_rr(affected_rrsigs, rrsig);
+          // if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
+          //   ldns_rr* rrsig;
+          //   ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
+          //
+          //   if (status != LDNS_STATUS_OK) {
+          //     str_set_destroy(set_z2);
+          //     ldns_rr_list_deep_free(affected_rrsigs);
+          //     unmap_file(&file1);
+          //     unmap_file(&file2);
+          //     fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
+          //     exit(EXIT_FAILURE);
+          //   }
+          //
+          //   ldns_rr_list_push_rr(affected_rrsigs, rrsig);
+          // }
         }
         start = p + 1;
       }
@@ -437,7 +450,7 @@ int main(int argc, char* argv[])
     ldns_dname2buffer_wire(b, ldns_rr_owner(rr));
 
     /* Add the covered RR type as a string (e.g. "A", "AAAA", "MX") */
-    char* type_str = ldns_rr_type2str(ldns_rr_get_type(rr));
+    char* type_str = ldns_rr_type2str((ldns_rr_type)ldns_rdf2native_int16(ldns_rr_rrsig_typecovered(rr)));
     if (type_str) {
       ldns_buffer_write(b, type_str, strlen(type_str));
       LDNS_FREE(type_str);
