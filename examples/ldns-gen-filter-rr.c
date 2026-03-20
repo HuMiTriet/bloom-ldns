@@ -231,7 +231,7 @@ int main(int argc, char* argv[])
   int c;
   // ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0.2;
-  uint32_t current_time = 0;
+  // uint32_t current_time = 0;
   uint32_t exp_buffer_sec = 86400 * 2;
   char* domain_name = NULL;
   uint32_t ttl = 900;
@@ -258,21 +258,21 @@ int main(int argc, char* argv[])
     //     }
     //   }
     //   break;
-    case 'c': {
-      struct tm tm;
-      memset(&tm, 0, sizeof(struct tm));
-      if (strptime(optarg, "%Y-%m-%d %H:%M:%S", &tm) == NULL) {
-        fprintf(stderr, "Invalid time format for -c. Use 'YYYY-MM-DD HH:MM:SS'\n");
-        exit(EXIT_FAILURE);
-      }
-      time_t t = mktime(&tm);
-      if (t == -1) {
-        fprintf(stderr, "Failed to convert time for -c\n");
-        exit(EXIT_FAILURE);
-      }
-      current_time = (uint32_t)t;
-      break;
-    }
+    // case 'c': {
+    //   struct tm tm;
+    //   memset(&tm, 0, sizeof(struct tm));
+    //   if (strptime(optarg, "%Y-%m-%d %H:%M:%S", &tm) == NULL) {
+    //     fprintf(stderr, "Invalid time format for -c. Use 'YYYY-MM-DD HH:MM:SS'\n");
+    //     exit(EXIT_FAILURE);
+    //   }
+    //   time_t t = mktime(&tm);
+    //   if (t == -1) {
+    //     fprintf(stderr, "Failed to convert time for -c\n");
+    //     exit(EXIT_FAILURE);
+    //   }
+    //   current_time = (uint32_t)t;
+    //   break;
+    // }
     case 'b':
       exp_buffer_sec = atoi(optarg);
       break;
@@ -305,10 +305,10 @@ int main(int argc, char* argv[])
     }
   }
 
-  if (current_time == 0) {
-    current_time = (uint32_t)time(NULL);
-  }
-
+  // if (current_time == 0) {
+  //   current_time = (uint32_t)time(NULL);
+  // }
+  //
   argc -= optind;
   argv += optind;
 
@@ -471,7 +471,8 @@ int main(int argc, char* argv[])
   // 1. Create TXT record owner name: YYYYMMDDHHMMSS._filter.<signer name>
   size_t domain_len = strlen(domain_name);
   // YYYYMMDDHHMMSS (14) + "._filter." (9) + domain + null (1) = 24 + domain_len
-  size_t owner_len = 24 + domain_len;
+  // size_t owner_len = 24 + domain_len;
+  size_t owner_len = 10 + domain_len;
   char* owner_name = malloc(owner_len);
   if (!owner_name) {
     perror("malloc");
@@ -482,13 +483,15 @@ int main(int argc, char* argv[])
   }
 
   // convert key to YYYYMMDD format
-  time_t t_current = (time_t)current_time;
-  struct tm tm_latest_epoch;
-  gmtime_r(&t_current, &tm_latest_epoch);
+  // time_t t_current = (time_t)current_time;
+  // struct tm tm_latest_epoch;
+  // gmtime_r(&t_current, &tm_latest_epoch);
 
-  snprintf(owner_name, owner_len, "%04d%02d%02d%02d%02d%02d._filter.%s",
-           tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday,
-           tm_latest_epoch.tm_hour, tm_latest_epoch.tm_min, tm_latest_epoch.tm_sec, domain_name);
+  // snprintf(owner_name, owner_len, "%04d%02d%02d%02d%02d%02d._filter.%s",
+  //          tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday,
+  //          tm_latest_epoch.tm_hour, tm_latest_epoch.tm_min, tm_latest_epoch.tm_sec, domain_name);
+
+  snprintf(owner_name, owner_len, "_filter.%s", domain_name);
 
   // 2. Prepare header: r=86400 * 2;a=0;d=
   char* header_buf = NULL;
