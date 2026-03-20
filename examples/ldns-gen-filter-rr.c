@@ -237,7 +237,7 @@ int main(int argc, char* argv[])
   uint32_t ttl = 900;
   prog = argv[0];
 
-  const char* output_fn = "filter.txt";
+  // const char* output_fn = "filter.txt";
 
   while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:h")) != -1) {
     switch (c) {
@@ -286,9 +286,9 @@ int main(int argc, char* argv[])
         domain_name++;
       }
       break;
-    case 'o':
-      output_fn = optarg;
-      break;
+      // case 'o':
+      //   output_fn = optarg;
+      //   break;
 
     case 'h':
       usage(stdout, prog);
@@ -409,12 +409,12 @@ int main(int argc, char* argv[])
   unmap_file(&file1);
   unmap_file(&file2);
 
-  printf("Opening file for writing: '%s'\n", output_fn);
-  FILE* fp = fopen(output_fn, "a");
-  if (!fp) {
-    fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
-    return EXIT_FAILURE;
-  }
+  // printf("Opening file for writing: '%s'\n", output_fn);
+  // FILE* fp = fopen(output_fn, "a");
+  // if (!fp) {
+  //   fprintf(stderr, "Unable to open %s: %s\n", output_fn, strerror(errno));
+  //   return EXIT_FAILURE;
+  // }
 
   // add each affected_rrsigs to the bloom filter
   struct bloom bloom;
@@ -424,7 +424,7 @@ int main(int argc, char* argv[])
 
   if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
     fprintf(stderr, "Error initializing bloom filter\n");
-    fclose(fp);
+    // fclose(fp);
     exit(EXIT_FAILURE);
   }
 
@@ -442,7 +442,7 @@ int main(int argc, char* argv[])
     fprintf(stderr, "Error: Domain name (-d) is required for TXT record generation\n");
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
-    fclose(fp);
+    // fclose(fp);
     exit(EXIT_FAILURE);
   }
 
@@ -455,7 +455,7 @@ int main(int argc, char* argv[])
     perror("malloc");
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
-    fclose(fp);
+    // fclose(fp);
     exit(EXIT_FAILURE);
   }
 
@@ -476,7 +476,7 @@ int main(int argc, char* argv[])
     perror("asprintf");
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
-    fclose(fp);
+    // fclose(fp);
     free(owner_name);
     exit(EXIT_FAILURE);
   }
@@ -489,7 +489,7 @@ int main(int argc, char* argv[])
     free(header_buf);
     ldns_rr_list_deep_free(affected_rrsigs);
     bloom_free(&bloom);
-    fclose(fp);
+    // fclose(fp);
     free(owner_name);
     exit(EXIT_FAILURE);
   }
@@ -511,7 +511,7 @@ int main(int argc, char* argv[])
     free(full_data);
     free(owner_name);
     bloom_free(&bloom);
-    fclose(fp);
+    // fclose(fp);
     ldns_rr_list_deep_free(affected_rrsigs);
     exit(EXIT_FAILURE);
   }
@@ -532,13 +532,13 @@ int main(int argc, char* argv[])
     offset += chunk_size;
   }
 
-  ldns_rr_print(fp, txt_rr);
-  if (ferror(fp)) {
-    perror("Error writing to file");
-  }
-  else {
-    printf("Successfully wrote to %s\n", owner_name);
-  }
+  ldns_rr_print(stdout, txt_rr);
+  // if (ferror(fp)) {
+  //   perror("Error writing to file");
+  // }
+  // else {
+  //   printf("Successfully wrote to %s\n", owner_name);
+  // }
 
   ldns_rr_free(txt_rr);
   free(full_data);
@@ -546,7 +546,7 @@ int main(int argc, char* argv[])
 
   bloom_free(&bloom);
 
-  fclose(fp);
+  // fclose(fp);
 
   ldns_rr_list_deep_free(affected_rrsigs);
   exit(EXIT_SUCCESS);
