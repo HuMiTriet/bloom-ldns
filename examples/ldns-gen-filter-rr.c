@@ -239,8 +239,11 @@ int main(int argc, char* argv[])
 
   // const char* output_fn = "filter.txt";
 
-  while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:h")) != -1) {
+  while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:hv")) != -1) {
     switch (c) {
+    case 'v':
+      printf("Version 3");
+      break;
     // case 'f':
     //   if (strncmp(optarg, "list", 5) == 0) {
     //     show_algorithms(stdout);
