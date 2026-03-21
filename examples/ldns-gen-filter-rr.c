@@ -215,14 +215,14 @@ static void show_algorithms(FILE* out)
 
 static void usage(FILE* fp, char* prog)
 {
-  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] [-r] <zonefile1> <zonefile2>\n",
+  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] [-r] -o <output filename> <zonefile1> <zonefile2>\n",
           prog);
   fprintf(fp, "  generate a new filter rr type\n");
   fprintf(fp, "  -f - filter type (default to a bloom fitler) (-f list to show a list)\n");
   fprintf(fp, "  -p <double> - false positive rate (must be greater than 0)\n");
   fprintf(fp, "  -c current time (usually the start of the date of the second zone file)\n");
 
-  fprintf(fp, "  output the filter TXT record to stdout\n");
+  fprintf(fp, "  output multiple files prefixed with _filter. One file for each expiration date in the zone\n");
 }
 
 int main(int argc, char* argv[])
@@ -237,7 +237,9 @@ int main(int argc, char* argv[])
   uint32_t ttl = 900;
   prog = argv[0];
 
-  while ((c = getopt(argc, argv, "f:c:b:p:rd:t:h")) != -1) {
+  // const char* output_fn = "filter.txt";
+
+  while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:h")) != -1) {
     switch (c) {
     // case 'f':
     //   if (strncmp(optarg, "list", 5) == 0) {
@@ -418,7 +420,7 @@ int main(int argc, char* argv[])
   struct bloom bloom;
   size_t rrsig_num = ldns_rr_list_rr_count(affected_rrsigs);
 
-  printf("Num rrsig: %zu \n", rrsig_num);
+  // printf("Num rrsig: %zu \n", rrsig_num);
 
   if (bloom_init2(&bloom, rrsig_num, false_positive) != 0) {
     fprintf(stderr, "Error initializing bloom filter\n");
