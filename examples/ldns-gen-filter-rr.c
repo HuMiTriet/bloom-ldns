@@ -242,7 +242,7 @@ int main(int argc, char* argv[])
   while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:hv")) != -1) {
     switch (c) {
     case 'v':
-      printf("Version 3");
+      printf("Version 3 \n");
       break;
     // case 'f':
     //   if (strncmp(optarg, "list", 5) == 0) {
