@@ -472,7 +472,7 @@ int main(int argc, char* argv[])
 
   // 2. Prepare header: r=86400 * 2;a=0;d=
   char* header_buf = NULL;
-  int header_len = asprintf(&header_buf, "r=%u\\;a=0\\;d=", exp_buffer_sec);
+  int header_len = asprintf(&header_buf, "r=%u;a=0;d=", exp_buffer_sec);
 
   if (header_len < 0) {
     perror("asprintf");
