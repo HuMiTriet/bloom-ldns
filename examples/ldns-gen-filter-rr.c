@@ -215,10 +215,9 @@ static void show_algorithms(FILE* out)
 
 static void usage(FILE* fp, char* prog)
 {
-  fprintf(fp, "%s [-f <filter>] [-p <false positive rate>] [-c <current time in YYYY-MM-DD HH:MM:SS format>] [-b <seconds>] [-r] -o <output filename> <zonefile1> <zonefile2>\n",
+  fprintf(fp, "%s -p 0.001 -d <domain name> -b <rrsig referesh> <file1> <file2>\n",
           prog);
   fprintf(fp, "  generate a new filter rr type\n");
-  fprintf(fp, "  -f - filter type (default to a bloom fitler) (-f list to show a list)\n");
   fprintf(fp, "  -p <double> - false positive rate (must be greater than 0)\n");
   fprintf(fp, "  -c current time (usually the start of the date of the second zone file)\n");
 
@@ -242,7 +241,7 @@ int main(int argc, char* argv[])
   while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:hv")) != -1) {
     switch (c) {
     case 'v':
-      printf("Version 3 \n");
+      printf("Version 7 \n");
       break;
     // case 'f':
     //   if (strncmp(optarg, "list", 5) == 0) {
@@ -463,9 +462,9 @@ int main(int argc, char* argv[])
   }
 
   // convert key to YYYYMMDD format
-  time_t t_current = (time_t)current_time;
+  time_t latest_filter_epoch = (current_time / 450) * 450;
   struct tm tm_latest_epoch;
-  gmtime_r(&t_current, &tm_latest_epoch);
+  gmtime_r(&latest_filter_epoch, &tm_latest_epoch);
 
   snprintf(owner_name, owner_len, "%04d%02d%02d%02d%02d%02d._filter.%s",
            tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday,
@@ -473,7 +472,7 @@ int main(int argc, char* argv[])
 
   // 2. Prepare header: r=86400 * 2;a=0;d=
   char* header_buf = NULL;
-  int header_len = asprintf(&header_buf, "r=%u;a=0;d=", exp_buffer_sec);
+  int header_len = asprintf(&header_buf, "r=%u\\;a=0\\;d=", exp_buffer_sec);
 
   if (header_len < 0) {
     perror("asprintf");
