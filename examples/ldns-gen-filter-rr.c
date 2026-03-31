@@ -429,9 +429,17 @@ int main(int argc, char* argv[])
   for (size_t i = 0; i < ldns_rr_list_rr_count(affected_rrsigs); i++) {
     ldns_rr* rr = ldns_rr_list_rr(affected_rrsigs, i);
     ldns_buffer_clear(b);
-    if (ldns_rr_rdata2buffer_wire(b, rr) == LDNS_STATUS_OK) {
-      bloom_add(&bloom, ldns_buffer_begin(b), (int)ldns_buffer_position(b));
+    /* Add the RRset owner name (= RRSIG owner) in wire format */
+    ldns_dname2buffer_wire(b, ldns_rr_owner(rr));
+
+    /* Add the covered RR type as a string (e.g. "A", "AAAA", "MX") */
+    char* type_str = ldns_rr_type2str((ldns_rr_type)ldns_rdf2native_int16(ldns_rr_rrsig_typecovered(rr)));
+    if (type_str) {
+      ldns_buffer_write(b, type_str, strlen(type_str));
+      LDNS_FREE(type_str);
     }
+
+    bloom_add(&bloom, ldns_buffer_begin(b), (int)ldns_buffer_position(b));
   }
   ldns_buffer_free(b);
 
