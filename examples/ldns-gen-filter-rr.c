@@ -261,15 +261,10 @@ int main(int argc, char* argv[])
     //   }
     //   break;
     case 'c': {
-      struct tm tm;
-      memset(&tm, 0, sizeof(struct tm));
-      if (strptime(optarg, "%Y-%m-%d %H:%M:%S", &tm) == NULL) {
-        fprintf(stderr, "Invalid time format for -c. Use 'YYYY-MM-DD HH:MM:SS'\n");
-        exit(EXIT_FAILURE);
-      }
-      time_t t = mktime(&tm);
-      if (t == -1) {
-        fprintf(stderr, "Failed to convert time for -c\n");
+      char* endptr;
+      long long t = strtoll(optarg, &endptr, 10);
+      if (optarg[0] == '\0' || *endptr != '\0' || t < 0) {
+        fprintf(stderr, "Invalid time format for -c. Use a Unix epoch timestamp\n");
         exit(EXIT_FAILURE);
       }
       current_time = (uint32_t)t;
@@ -462,13 +457,11 @@ int main(int argc, char* argv[])
   }
 
   // convert key to YYYYMMDD format
-  time_t latest_filter_epoch = (current_time / 450) * 450;
-  struct tm tm_latest_epoch;
-  gmtime_r(&latest_filter_epoch, &tm_latest_epoch);
+  // time_t latest_filter_epoch = (current_time / 450) * 450;
+  // struct tm tm_latest_epoch;
+  // gmtime_r(&latest_filter_epoch, &tm_latest_epoch);
 
-  snprintf(owner_name, owner_len, "%04d%02d%02d%02d%02d%02d._filter.%s",
-           tm_latest_epoch.tm_year + 1900, tm_latest_epoch.tm_mon + 1, tm_latest_epoch.tm_mday,
-           tm_latest_epoch.tm_hour, tm_latest_epoch.tm_min, tm_latest_epoch.tm_sec, domain_name);
+  snprintf(owner_name, owner_len, "_filter.%s", domain_name);
 
   // 2. Prepare header: r=86400 * 2;a=0;d=
   char* header_buf = NULL;
