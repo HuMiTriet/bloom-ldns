@@ -219,7 +219,6 @@ static void usage(FILE* fp, char* prog)
           prog);
   fprintf(fp, "  generate a new filter rr type\n");
   fprintf(fp, "  -p <double> - false positive rate (must be greater than 0)\n");
-  fprintf(fp, "  -c current time (usually the start of the date of the second zone file)\n");
 
   fprintf(fp, "  output multiple files prefixed with _filter. One file for each expiration date in the zone\n");
 }
@@ -230,7 +229,7 @@ int main(int argc, char* argv[])
   int c;
   // ldns_filter_algorithms filter = BLOOM_FILTER;
   double false_positive = 0.2;
-  uint32_t current_time = 0;
+  // uint32_t current_time = 0;
   uint32_t exp_buffer_sec = 86400 * 2;
   char* domain_name = NULL;
   uint32_t ttl = 900;
@@ -238,38 +237,29 @@ int main(int argc, char* argv[])
 
   // const char* output_fn = "filter.txt";
 
-  while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:hv")) != -1) {
+  // while ((c = getopt(argc, argv, "f:c:b:p:rd:t:o:hv")) != -1) {
+  while ((c = getopt(argc, argv, "f:b:p:rd:t:o:hv")) != -1) {
     switch (c) {
     case 'v':
       printf("Version 7 \n");
       break;
-    // case 'f':
-    //   if (strncmp(optarg, "list", 5) == 0) {
-    //     show_algorithms(stdout);
-    //     exit(EXIT_SUCCESS);
-    //   }
-    //   {
-    //     ldns_lookup_table* lt = ldns_lookup_by_name(filter_algorithms, optarg);
-    //     if (lt) {
-    //       filter = (ldns_filter_algorithms)lt->id;
-    //     }
-    //     else {
-    //       fprintf(stderr, "Unknown filter algorithm: %s\n", optarg);
-    //       show_algorithms(stderr);
-    //       exit(EXIT_FAILURE);
-    //     }
-    //   }
-    //   break;
-    case 'c': {
-      char* endptr;
-      long long t = strtoll(optarg, &endptr, 10);
-      if (optarg[0] == '\0' || *endptr != '\0' || t < 0) {
-        fprintf(stderr, "Invalid time format for -c. Use a Unix epoch timestamp\n");
-        exit(EXIT_FAILURE);
-      }
-      current_time = (uint32_t)t;
-      break;
-    }
+      // case 'f':
+      //   if (strncmp(optarg, "list", 5) == 0) {
+      //     show_algorithms(stdout);
+      //     exit(EXIT_SUCCESS);
+      //   }
+      //   {
+      //     ldns_lookup_table* lt = ldns_lookup_by_name(filter_algorithms, optarg);
+      //     if (lt) {
+      //       filter = (ldns_filter_algorithms)lt->id;
+      //     }
+      //     else {
+      //       fprintf(stderr, "Unknown filter algorithm: %s\n", optarg);
+      //       show_algorithms(stderr);
+      //       exit(EXIT_FAILURE);
+      //     }
+      //   }
+      //   break;
     case 'b':
       exp_buffer_sec = atoi(optarg);
       break;
@@ -302,9 +292,9 @@ int main(int argc, char* argv[])
     }
   }
 
-  if (current_time == 0) {
-    current_time = (uint32_t)time(NULL);
-  }
+  // if (current_time == 0) {
+  //   current_time = (uint32_t)time(NULL);
+  // }
 
   argc -= optind;
   argv += optind;
@@ -381,21 +371,21 @@ int main(int argc, char* argv[])
           int exp_len = col_lens[1];
           time_t exp_t = parse_dnssec_time(exp, exp_len);
 
-          if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
-            ldns_rr* rrsig;
-            ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
+          // if ((current_time + orig_ttl) < exp_t && current_time < exp_t - exp_buffer_sec) {
+          ldns_rr* rrsig;
+          ldns_status status = ldns_rr_new_frm_str(&rrsig, start, 0, NULL, NULL);
 
-            if (status != LDNS_STATUS_OK) {
-              str_set_destroy(set_z2);
-              ldns_rr_list_deep_free(affected_rrsigs);
-              unmap_file(&file1);
-              unmap_file(&file2);
-              fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
-              exit(EXIT_FAILURE);
-            }
-
-            ldns_rr_list_push_rr(affected_rrsigs, rrsig);
+          if (status != LDNS_STATUS_OK) {
+            str_set_destroy(set_z2);
+            ldns_rr_list_deep_free(affected_rrsigs);
+            unmap_file(&file1);
+            unmap_file(&file2);
+            fprintf(stderr, "Error while trying to get oritinal ttl and exp time for line of: \n%s\n", start);
+            exit(EXIT_FAILURE);
           }
+
+          ldns_rr_list_push_rr(affected_rrsigs, rrsig);
+          // }
         }
         start = p + 1;
       }
