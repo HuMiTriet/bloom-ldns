@@ -443,10 +443,12 @@ load_key(const char* const p, ENGINE* const e)
   case LDNS_SIGN_ECDSAP256SHA256:
   case LDNS_SIGN_ECDSAP384SHA384:
 #endif
+#ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
   case LDNS_SIGN_ML_DSA_65:
   case LDNS_SIGN_ML_DSA_87:
     break;
+#endif /* ifdef ENABLE_OQS */
   default:
     fprintf(stderr,
             "Algorithm %d cannot be used for signing.\n",

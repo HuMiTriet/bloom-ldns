@@ -88,6 +88,7 @@ extern "C"
   ldns_rdf* ldns_sign_public_rsamd5(ldns_buffer* to_sign, RSA* key);
 #endif /* LDNS_BUILD_CONFIG_HAVE_SSL */
 
+#ifdef ENABLE_OQS
   /**
    * Sign a buffer with a PQ Safe algorithm from LibOQS
    * \param[in] to_sign buffer with the data
@@ -95,6 +96,7 @@ extern "C"
    * \return a ldns_rdf with the signed data
    */
   ldns_rdf* ldns_sign_public_oqs(ldns_buffer* to_sign, oqs_key* key);
+#endif // ENABLE_OQS
 
   /**
    * Marks the names in the zone that are occluded. Those names will be skipped

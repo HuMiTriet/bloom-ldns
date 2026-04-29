@@ -111,15 +111,19 @@ extern "C"
     LDNS_SIGN_HMACSHA224 = 162, /* ditto */
     LDNS_SIGN_HMACSHA384 = 164, /* ditto */
     LDNS_SIGN_HMACSHA512 = 165, /* ditto */
+#ifdef ENABLE_OQS
     LDNS_SIGN_ML_DSA_44 = 245,
     LDNS_SIGN_ML_DSA_65 = 246,
     LDNS_SIGN_ML_DSA_87 = 247
+#endif // ENABLE_OQS
   };
   typedef enum ldns_enum_signing_algorithm ldns_signing_algorithm;
 
+#ifdef ENABLE_OQS
 #define LDNS_SIGN_ML_DSA_44_SCHEME "ML-DSA-44"
 #define LDNS_SIGN_ML_DSA_65_SCHEME "ML-DSA-65"
 #define LDNS_SIGN_ML_DSA_87_SCHEME "ML-DSA-87"
+#endif // ENABLE_OQS
   /**
    * General key structure, can contain all types of keys that
    * are used in DNSSEC. Mostly used to store private keys, since
