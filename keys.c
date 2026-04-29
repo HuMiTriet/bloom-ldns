@@ -14,7 +14,10 @@
 #include <ldns/config.h>
 
 #include <ldns/ldns.h>
+#ifdef ENABLE_OQS
 #include <oqs/sig.h>
+#endif
+
 #include <string.h>
 
 #ifdef HAVE_SSL
@@ -66,9 +69,11 @@ ldns_lookup_table ldns_signing_algorithms[] = {
   {LDNS_SIGN_HMACSHA224, "hmac-sha224"},
   {LDNS_SIGN_HMACSHA384, "hmac-sha384"},
   {LDNS_SIGN_HMACSHA512, "hmac-sha512"},
+#ifdef ENABLE_OQS
   {LDNS_SIGN_ML_DSA_44, "ml-dsa-44"},
   {LDNS_SIGN_ML_DSA_65, "ml-dsa-65"},
   {LDNS_SIGN_ML_DSA_87, "ml-dsa-87"},
+#endif /* ifdef ENABLE_OQS */
   {0, NULL}};
 
 ldns_key_list* ldns_key_list_new(void)
@@ -418,6 +423,7 @@ static EVP_PKEY* ldns_key_new_frm_fp_ed448_l(FILE* fp, int* line_nr)
 }
 #endif
 
+#ifdef ENABLE_OQS
 static oqs_key*
 ldns_key_new_frm_fp_oqs_l(FILE* fp, char* algorithm)
 {
@@ -468,6 +474,7 @@ ldns_key_new_frm_fp_oqs_l(FILE* fp, char* algorithm)
 
   return priv_key;
 }
+#endif /* ifdef ENABLE_OQS */
 
 ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
 {
@@ -661,6 +668,7 @@ ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
     alg = LDNS_SIGN_HMACSHA512;
   }
 
+#ifdef ENABLE_OQS
   if (strncmp(d, "245", 3) == 0 && isspace((unsigned char)d[3])) {
     alg = LDNS_SIGN_ML_DSA_44;
   }
@@ -671,6 +679,7 @@ ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
   if (strncmp(d, "247", 3) == 0 && isspace((unsigned char)d[3])) {
     alg = LDNS_SIGN_ML_DSA_87;
   }
+#endif /* ifdef ENABLE_OQS */
 
   LDNS_FREE(d);
 
@@ -777,6 +786,8 @@ ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
 #endif /* splint */
     break;
 #endif
+
+#ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
     ldns_key_set_algorithm(k, alg);
     ldns_key_set_external_key(k, ldns_key_new_frm_fp_oqs_l(fp, (char*)LDNS_SIGN_ML_DSA_44_SCHEME));
@@ -791,6 +802,7 @@ ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
     ldns_key_set_algorithm(k, alg);
     ldns_key_set_external_key(k, ldns_key_new_frm_fp_oqs_l(fp, (char*)LDNS_SIGN_ML_DSA_87_SCHEME));
     break;
+#endif /* ifdef ENABLE_OQS */
 
   default:
     ldns_key_free(k);
@@ -1194,6 +1206,7 @@ static EVP_PKEY* ldns_gen_gost_key(void)
 }
 #endif
 
+#ifdef ENABLE_OQS
 static oqs_key*
 ldns_key_new_oqs_frm_algorithm(const char* algorithm)
 {
@@ -1250,6 +1263,7 @@ ldns_key_new_oqs_frm_algorithm(const char* algorithm)
   OQS_SIG_free(sig);
   return key;
 }
+#endif /* ifdef ENABLE_OQS */
 
 ldns_key* ldns_key_new_frm_algorithm(ldns_signing_algorithm alg,
                                      uint16_t size)
@@ -1486,12 +1500,14 @@ ldns_key* ldns_key_new_frm_algorithm(ldns_signing_algorithm alg,
 #endif
     break;
 #endif /* ED448 */
+#ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
     ldns_key_set_external_key(k, ldns_key_new_oqs_frm_algorithm("ML-DSA-44"));
     break;
   case LDNS_SIGN_ML_DSA_65:
     ldns_key_set_external_key(k, ldns_key_new_oqs_frm_algorithm("ML-DSA-65"));
     break;
+#endif /* ifdef ENABLE_OQS */
   }
   ldns_key_set_algorithm(k, alg);
   return k;
@@ -2158,6 +2174,7 @@ ldns_rr* ldns_key2rr(const ldns_key* k)
     memcpy(bin, ldns_key_hmac_key(k), size);
     internal_data = 1;
     break;
+#ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
   case LDNS_SIGN_ML_DSA_65:
     ldns_rr_push_rdf(pubkey,
@@ -2177,6 +2194,7 @@ ldns_rr* ldns_key2rr(const ldns_key* k)
     memcpy(bin, pub_oqs_key->pk, size);
     internal_data = 1;
     break;
+#endif /* ifdef ENABLE_OQS */
   }
   /* fourth the key bin material */
   if (internal_data) {

@@ -711,9 +711,18 @@ AC_DEFUN([ACX_SSL_CHECKS], [
 	    	    ACX_RUNTIME_PATH_ADD([$ssldir_lib])
 	    fi
 
+            AC_ARG_ENABLE([oqs],
+                [AS_HELP_STRING([--enable-oqs], [Enable liboqs post-quantum support])],
+                [enable_oqs=$enableval], [enable_oqs=no])
+            AS_IF([test "x$enable_oqs" = "xyes"], [
+                AC_DEFINE([ENABLE_OQS], [1], [Define if liboqs support is enabled])
+            ])
+
             AC_MSG_CHECKING([for EVP_sha256 in -lcrypto])
             LIBS="$LIBS -lcrypto"
-            LIBSSL_LIBS="$LIBSSL_LIBS -lcrypto -loqs"
+            AS_IF([test "x$enable_oqs" = "xyes"],
+                [LIBSSL_LIBS="$LIBSSL_LIBS -lcrypto -loqs"],
+                [LIBSSL_LIBS="$LIBSSL_LIBS -lcrypto"])
             AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[
                 int EVP_sha256(void);
                 (void)EVP_sha256();

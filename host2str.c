@@ -3295,6 +3295,7 @@ ldns_key2buffer_str(ldns_buffer* output, const ldns_key* k)
       ldns_buffer_printf(output, "Algorithm: 165 (HMAC_SHA512)\n");
       status = ldns_hmac_key2buffer_str(output, k);
       break;
+#ifdef ENABLE_OQS
     case LDNS_SIGN_ML_DSA_44:
       ldns_buffer_printf(output, "Private-key-format: v1.2\n");
       ldns_buffer_printf(output, "Algorithm: %d (LDNS_SIGN_ML_DSA_44)\n", LDNS_SIGN_ML_DSA_44);
@@ -3305,6 +3306,7 @@ ldns_key2buffer_str(ldns_buffer* output, const ldns_key* k)
       ldns_buffer_printf(output, "Algorithm: %d (LDNS_SIGN_ML_DSA_65)\n", LDNS_SIGN_ML_DSA_65);
       status = ldns_oqs_key2buffer_str(output, k);
       break;
+#endif /* ifdef ENABLE_OQS */
     }
 #endif /* HAVE_SSL */
   }

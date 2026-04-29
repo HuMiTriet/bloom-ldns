@@ -6,7 +6,10 @@
 #include <ldns/dnssec.h>
 #include <ldns/dnssec_sign.h>
 
+#ifdef ENABLE_OQS
 #include <oqs/sig.h>
+#endif /* ifdef ENABLE_OQS */
+
 #include <strings.h>
 #include <time.h>
 
@@ -213,10 +216,12 @@ ldns_sign_public_buffer(ldns_buffer* sign_buf, ldns_key* current_key)
       ldns_key_evp_key(current_key),
       EVP_md5());
     break;
+#ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
   case LDNS_SIGN_ML_DSA_65:
     b64rdf = ldns_sign_public_oqs(sign_buf, ldns_key_external_key(current_key));
     break;
+#endif /* ifdef ENABLE_OQS */
   default:
     /* do _you_ know this alg? */
     printf("unknown algorithm, ");
@@ -649,6 +654,7 @@ ldns_sign_public_rsamd5(ldns_buffer* to_sign, RSA* key)
 }
 #endif /* HAVE_SSL */
 
+#ifdef ENABLE_OQS
 ldns_rdf*
 ldns_sign_public_oqs(ldns_buffer* to_sign, oqs_key* key)
 {
@@ -674,6 +680,7 @@ ldns_sign_public_oqs(ldns_buffer* to_sign, oqs_key* key)
 
   return sigdata_rdf;
 }
+#endif /* ifdef ENABLE_OQS */
 
 /**
  * Pushes all rrs from the rrsets of type A and AAAA on gluelist.

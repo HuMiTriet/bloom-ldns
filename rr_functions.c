@@ -325,9 +325,11 @@ ldns_rr_dnskey_key_size_raw(const unsigned char* keydata,
 #endif
   case LDNS_SIGN_HMACMD5:
     return len;
+#ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
   case LDNS_SIGN_ML_DSA_65:
     return len * 8;
+#endif /* ifdef ENABLE_OQS */
   default:
     return 0;
   }
