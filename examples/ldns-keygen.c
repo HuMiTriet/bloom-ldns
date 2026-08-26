@@ -345,6 +345,11 @@ int main(int argc, char* argv[])
 #ifdef USE_ED448
   case LDNS_SIGN_ED448:
 #endif
+#ifdef ENABLE_OQS
+  case LDNS_SIGN_ML_DSA_44:
+  case LDNS_SIGN_ML_DSA_65:
+  case LDNS_SIGN_ML_DSA_87:
+#endif
   case LDNS_SIGN_RSASHA256:
   case LDNS_SIGN_RSASHA512:
     ds = ldns_key_rr2ds(pubkey, LDNS_SHA256);

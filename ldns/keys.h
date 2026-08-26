@@ -62,9 +62,9 @@ extern "C"
     LDNS_INDIRECT = 252,
     LDNS_PRIVATEDNS = 253,
     LDNS_PRIVATEOID = 254,
-    LDNS_ML_DSA_44 = 245,
-    LDNS_ML_DSA_65 = 246,
-    LDNS_ML_DSA_87 = 247,
+    LDNS_ML_DSA_44 = 18,
+    LDNS_ML_DSA_65 = 19,
+    LDNS_ML_DSA_87 = 20,
   };
   typedef enum ldns_enum_algorithm ldns_algorithm;
 
@@ -112,9 +112,9 @@ extern "C"
     LDNS_SIGN_HMACSHA384 = 164, /* ditto */
     LDNS_SIGN_HMACSHA512 = 165, /* ditto */
 #ifdef ENABLE_OQS
-    LDNS_SIGN_ML_DSA_44 = 245,
-    LDNS_SIGN_ML_DSA_65 = 246,
-    LDNS_SIGN_ML_DSA_87 = 247
+    LDNS_SIGN_ML_DSA_44 = 18,
+    LDNS_SIGN_ML_DSA_65 = 19,
+    LDNS_SIGN_ML_DSA_87 = 20
 #endif // ENABLE_OQS
   };
   typedef enum ldns_enum_signing_algorithm ldns_signing_algorithm;

@@ -13,8 +13,8 @@
  * not complete.
  */
 
-#include "ldns/keys.h"
 #include <ldns/config.h>
+#include "ldns/keys.h"
 
 #include <ldns/ldns.h>
 
@@ -328,6 +328,7 @@ ldns_rr_dnskey_key_size_raw(const unsigned char* keydata,
 #ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
   case LDNS_SIGN_ML_DSA_65:
+  case LDNS_SIGN_ML_DSA_87:
     return len * 8;
 #endif /* ifdef ENABLE_OQS */
   default:

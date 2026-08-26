@@ -10,8 +10,8 @@
  *
  * See the file LICENSE for the license
  */
-#include "ldns/keys.h"
 #include <ldns/config.h>
+#include "ldns/keys.h"
 
 #include <ldns/ldns.h>
 
@@ -3304,6 +3304,11 @@ ldns_key2buffer_str(ldns_buffer* output, const ldns_key* k)
     case LDNS_SIGN_ML_DSA_65:
       ldns_buffer_printf(output, "Private-key-format: v1.2\n");
       ldns_buffer_printf(output, "Algorithm: %d (LDNS_SIGN_ML_DSA_65)\n", LDNS_SIGN_ML_DSA_65);
+      status = ldns_oqs_key2buffer_str(output, k);
+      break;
+    case LDNS_SIGN_ML_DSA_87:
+      ldns_buffer_printf(output, "Private-key-format: v1.2\n");
+      ldns_buffer_printf(output, "Algorithm: %d (LDNS_SIGN_ML_DSA_87)\n", LDNS_SIGN_ML_DSA_87);
       status = ldns_oqs_key2buffer_str(output, k);
       break;
 #endif /* ifdef ENABLE_OQS */

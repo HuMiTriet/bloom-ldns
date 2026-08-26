@@ -71,6 +71,12 @@ suitable_hash(ldns_signing_algorithm algorithm)
 	case LDNS_SIGN_ED448:
 		return LDNS_SHA256;
 #endif
+#ifdef ENABLE_OQS
+	case LDNS_SIGN_ML_DSA_44:
+	case LDNS_SIGN_ML_DSA_65:
+	case LDNS_SIGN_ML_DSA_87:
+		return LDNS_SHA256;
+#endif
 	default: break;
 	}
 	return LDNS_SHA1;

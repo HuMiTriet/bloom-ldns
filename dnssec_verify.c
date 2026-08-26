@@ -15,6 +15,10 @@
 #include <openssl/err.h>
 #include <openssl/md5.h>
 
+#ifdef ENABLE_OQS
+#include <oqs/sig.h>
+#endif /* ENABLE_OQS */
+
 ldns_dnssec_data_chain *
 ldns_dnssec_data_chain_new(void)
 {
@@ -1943,6 +1947,59 @@ ldns_verify_rrsig_ed448_raw(unsigned char* sig, size_t siglen,
 }
 #endif /* USE_ED448 */
 
+#ifdef ENABLE_OQS
+/* Map a DNSSEC algorithm number onto the liboqs scheme identifier. */
+static const char*
+ldns_oqs_scheme_by_algo(uint8_t algo)
+{
+	switch(algo) {
+	case LDNS_ML_DSA_44:
+		return LDNS_SIGN_ML_DSA_44_SCHEME;
+	case LDNS_ML_DSA_65:
+		return LDNS_SIGN_ML_DSA_65_SCHEME;
+	case LDNS_ML_DSA_87:
+		return LDNS_SIGN_ML_DSA_87_SCHEME;
+	default:
+		return NULL;
+	}
+}
+
+static ldns_status
+ldns_verify_rrsig_oqs_raw(unsigned char* sig, size_t siglen,
+	ldns_buffer* rrset, unsigned char* key, size_t keylen, uint8_t algo)
+{
+	const char* scheme;
+	OQS_SIG* oqs_sig;
+	OQS_STATUS status;
+
+	scheme = ldns_oqs_scheme_by_algo(algo);
+	if(!scheme)
+		return LDNS_STATUS_CRYPTO_UNKNOWN_ALGO;
+
+	oqs_sig = OQS_SIG_new(scheme);
+	if(!oqs_sig)
+		return LDNS_STATUS_CRYPTO_ALGO_NOT_IMPL;
+
+	/* the DNSKEY rdata is the bare public key, so its length is fixed
+	 * by the scheme; a mismatch means the key does not belong here */
+	if(keylen != oqs_sig->length_public_key) {
+		OQS_SIG_free(oqs_sig);
+		return LDNS_STATUS_CRYPTO_BOGUS;
+	}
+
+	status = OQS_SIG_verify(oqs_sig,
+		(const uint8_t*)ldns_buffer_begin(rrset),
+		ldns_buffer_position(rrset),
+		(const uint8_t*)sig, siglen,
+		(const uint8_t*)key);
+	OQS_SIG_free(oqs_sig);
+
+	if(status != OQS_SUCCESS)
+		return LDNS_STATUS_CRYPTO_BOGUS;
+	return LDNS_STATUS_OK;
+}
+#endif /* ENABLE_OQS */
+
 #ifdef USE_ECDSA
 EVP_PKEY*
 ldns_ecdsa2pkey_raw(const unsigned char* key, size_t keylen, uint8_t algo)
@@ -2083,6 +2140,14 @@ ldns_verify_rrsig_buffers_raw(unsigned char* sig, size_t siglen,
 			key, keylen);
 		break;
 #endif
+#ifdef ENABLE_OQS
+	case LDNS_ML_DSA_44:
+	case LDNS_ML_DSA_65:
+	case LDNS_ML_DSA_87:
+		return ldns_verify_rrsig_oqs_raw(sig, siglen, verify_buf,
+			key, keylen, algo);
+		break;
+#endif
 	case LDNS_RSAMD5:
 		return ldns_verify_rrsig_rsamd5_raw(sig,
 									 siglen,
@@ -2188,6 +2253,11 @@ ldns_rrsig2rawsig_buffer(ldns_buffer* rawsig_buf, const ldns_rr* rrsig)
 #endif
 #ifdef USE_ED448
 	case LDNS_ED448:
+#endif
+#ifdef ENABLE_OQS
+	case LDNS_ML_DSA_44:
+	case LDNS_ML_DSA_65:
+	case LDNS_ML_DSA_87:
 #endif
 		if (ldns_rr_rdf(rrsig, 8) == NULL) {
 			return LDNS_STATUS_MISSING_RDATA_FIELDS_RRSIG;

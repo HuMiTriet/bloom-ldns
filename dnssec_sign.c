@@ -1,5 +1,5 @@
-#include "ldns/keys.h"
 #include <ldns/config.h>
+#include "ldns/keys.h"
 
 #include <ldns/ldns.h>
 
@@ -219,6 +219,7 @@ ldns_sign_public_buffer(ldns_buffer* sign_buf, ldns_key* current_key)
 #ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
   case LDNS_SIGN_ML_DSA_65:
+  case LDNS_SIGN_ML_DSA_87:
     b64rdf = ldns_sign_public_oqs(sign_buf, ldns_key_external_key(current_key));
     break;
 #endif /* ifdef ENABLE_OQS */

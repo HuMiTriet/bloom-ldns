@@ -10,8 +10,8 @@
  * See the file LICENSE for the license
  */
 
-#include "ldns/keys.h"
 #include <ldns/config.h>
+#include "ldns/keys.h"
 
 #include <ldns/ldns.h>
 #ifdef ENABLE_OQS
@@ -669,14 +669,14 @@ ldns_status ldns_key_new_frm_fp_l(ldns_key** key, FILE* fp, int* line_nr)
   }
 
 #ifdef ENABLE_OQS
-  if (strncmp(d, "245", 3) == 0 && isspace((unsigned char)d[3])) {
+  if (strncmp(d, "18", 2) == 0 && isspace((unsigned char)d[2])) {
     alg = LDNS_SIGN_ML_DSA_44;
   }
-  if (strncmp(d, "246", 3) == 0 && isspace((unsigned char)d[3])) {
+  if (strncmp(d, "19", 2) == 0 && isspace((unsigned char)d[2])) {
     alg = LDNS_SIGN_ML_DSA_65;
   }
 
-  if (strncmp(d, "247", 3) == 0 && isspace((unsigned char)d[3])) {
+  if (strncmp(d, "20", 2) == 0 && isspace((unsigned char)d[2])) {
     alg = LDNS_SIGN_ML_DSA_87;
   }
 #endif /* ifdef ENABLE_OQS */
@@ -1507,6 +1507,9 @@ ldns_key* ldns_key_new_frm_algorithm(ldns_signing_algorithm alg,
   case LDNS_SIGN_ML_DSA_65:
     ldns_key_set_external_key(k, ldns_key_new_oqs_frm_algorithm("ML-DSA-65"));
     break;
+  case LDNS_SIGN_ML_DSA_87:
+    ldns_key_set_external_key(k, ldns_key_new_oqs_frm_algorithm("ML-DSA-87"));
+    break;
 #endif /* ifdef ENABLE_OQS */
   }
   ldns_key_set_algorithm(k, alg);
@@ -2177,6 +2180,7 @@ ldns_rr* ldns_key2rr(const ldns_key* k)
 #ifdef ENABLE_OQS
   case LDNS_SIGN_ML_DSA_44:
   case LDNS_SIGN_ML_DSA_65:
+  case LDNS_SIGN_ML_DSA_87:
     ldns_rr_push_rdf(pubkey,
                      ldns_native2rdf_int8(LDNS_RDF_TYPE_ALG, ldns_key_algorithm(k)));
 
