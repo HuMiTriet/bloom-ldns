@@ -165,7 +165,7 @@ ldns_rr_new_frm_str_internal(ldns_rr **newrr, const char *str,
 	owner = LDNS_XMALLOC(char, LDNS_MAX_DOMAINLEN + 1);
 	ttl = LDNS_XMALLOC(char, LDNS_TTL_DATALEN);
 	clas = LDNS_XMALLOC(char, LDNS_SYNTAX_DATALEN);
-	rdata = LDNS_XMALLOC(char, LDNS_MAX_PACKETLEN + 1);
+	rdata = LDNS_XMALLOC(char, LDNS_MAX_RDATA_TEXTLEN + 1);
 	rr_buf = LDNS_MALLOC(ldns_buffer);
 	rd_buf = LDNS_MALLOC(ldns_buffer);
 	rd = LDNS_XMALLOC(char, LDNS_MAX_RDFLEN);
@@ -265,7 +265,7 @@ ldns_rr_new_frm_str_internal(ldns_rr **newrr, const char *str,
 		}
 	}
 
-	if (ldns_bget_token(rr_buf, rdata, "\0", LDNS_MAX_PACKETLEN) == -1) {
+	if (ldns_bget_token(rr_buf, rdata, "\0", LDNS_MAX_RDATA_TEXTLEN) == -1) {
 		/* apparently we are done, and it's only a question RR
 		 * so do not set status and go to ldnserror here
 		 */

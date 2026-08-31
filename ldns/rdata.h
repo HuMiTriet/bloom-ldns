@@ -30,6 +30,18 @@ extern "C" {
 
 #define LDNS_MAX_RDFLEN	65535
 
+/**
+ * Upper bound on the *presentation* form of one RR's rdata, as it appears in
+ * a zone file.  This is deliberately not LDNS_MAX_RDFLEN: escaping inflates
+ * the text well past the wire size, since a byte written \DDD costs four
+ * characters.  A TXT record carrying binary - a bloom filter, a certificate -
+ * is mostly unprintable, so its text runs roughly three times its wire length,
+ * and a legal 65535 byte rdata can reach about 263 KB written out.  Sized for
+ * that worst case so a record that is valid on the wire can always be read
+ * back from a zone file.
+ */
+#define LDNS_MAX_RDATA_TEXTLEN	(4 * LDNS_MAX_RDFLEN + 4096)
+
 #define LDNS_RDF_SIZE_BYTE              1
 #define LDNS_RDF_SIZE_WORD              2
 #define LDNS_RDF_SIZE_DOUBLEWORD        4
