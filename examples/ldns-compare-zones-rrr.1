@@ -1,0 +1,30 @@
+.TH ldns-compare-zones-rrr 1 "27 Oct 2026"
+.SH NAME
+ldns-compare-zones-rrr \- compare two snapshots of a zone RRset by RRset
+.SH SYNOPSIS
+.B ldns-compare-zones-rrr
+.IR [-s]
+.IR [-h]
+.IR [-v]
+.IR ZONEFILE1
+.IR ZONEFILE2
+.SH DESCRIPTION
+\fBldns-compare-zones-rrr\fR reads two snapshots of the same DNS zone, where
+ZONEFILE2 is the later one (its SOA serial must not be lower than that of
+ZONEFILE1). Both zones are walked RRset by RRset, each RRset together with the
+RRSIGs covering it, and the difference between the two SOA serial numbers is
+printed.
+.SH OPTIONS
+.TP
+\fB-s\fR
+Do not sort the zones.
+.TP
+\fB-h\fR
+Show usage and exit
+.TP
+\fB-v\fR
+Show the version and exit
+.SH AUTHOR
+Written by Triet Huynh, based on ldns-compare-zones.
+.SH COPYRIGHT
+See the file LICENSE for the license.
