@@ -121,7 +121,7 @@ static void sort_zone_rrset_rrsig(ldns_rr_list* rrl)
 }
 
 /* RRset at zone_rrs[*cur_idx] and the RRSIGs covering it; *cur_idx ends just past both.
- * Needs the sort_zone_rrs() order. Lists are shallow: free with ldns_rr_list_free. */
+ * Needs the sort_zone_rrset_rrsig() order. Lists are shallow: free with ldns_rr_list_free. */
 static rrset_rrsig get_rrset(const ldns_rr_list* zone_rrs, size_t* cur_idx)
 {
   ldns_rr* first_rr = ldns_rr_list_rr(zone_rrs, *cur_idx);
@@ -249,12 +249,13 @@ int main(int argc, char** argv)
     sort_zone_rrset_rrsig(rrl2);
   }
 
-  ldns_rr_list_print(stdout, rrl1);
-
-  // find the diff of the SOA serial number
-
   ldns_rr* z1_soa = ldns_zone_soa(z1);
   ldns_rr* z2_soa = ldns_zone_soa(z2);
+
+  if (!z1_soa || !z2_soa) {
+    fprintf(stderr, "%s: no SOA record found\n", z1_soa ? fn2 : fn1);
+    exit(EXIT_FAILURE);
+  }
 
   if (ldns_rr_compare(z1_soa, z2_soa) == 0) {
     printf("0,0,0,0,0\n");
@@ -265,7 +266,7 @@ int main(int argc, char** argv)
   uint32_t z2_soa_serial = ldns_rdf2native_int32(ldns_rr_rdf(z2_soa, 2));
 
   if (z1_soa_serial > z2_soa_serial) {
-    fprintf(stderr, "The second zone file has larger serial number that the first. The second zone file should be the day after the first zone file capture day.");
+    fprintf(stderr, "The first zone file has a larger serial number than the second. The second zone file should be the day after the first zone file capture day.\n");
     exit(EXIT_FAILURE);
   }
 
@@ -304,9 +305,9 @@ int main(int argc, char** argv)
     else {
       if (z1_rrs.rrsigs != NULL) {
         size_t i1_rrsig;
-        for (i1_rrsig = 0; i < ldns_rr_list_rr_count(z1_rrs.rrsigs); i++) {
+        for (i1_rrsig = 0; i1_rrsig < ldns_rr_list_rr_count(z1_rrs.rrsigs); i1_rrsig++) {
 
-          if (i1_rrsig > ldns_rr_list_rr_count(z2_rrs.rrsigs)) {
+          if (i1_rrsig >= ldns_rr_list_rr_count(z2_rrs.rrsigs)) {
             num_rrsigs_del += ldns_rr_list_rr_count(z1_rrs.rrsigs) - ldns_rr_list_rr_count(z2_rrs.rrsigs);
             break;
           }
@@ -331,7 +332,7 @@ int main(int argc, char** argv)
   printf("%u,%u,%u,%u,%u\n",
          (unsigned int)serial_diff,
          (unsigned int)num_rrsigs_del,
-         (unsigned int)num_rrset_del,
+         (unsigned int)num_rrsigs_chg,
          (unsigned int)num_rrset_del,
          (unsigned int)num_rrset_chg);
 }
