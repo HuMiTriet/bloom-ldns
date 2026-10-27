@@ -72,6 +72,9 @@
 /examples/ldns-compare-zones
 /examples/ldns-compare-zones.lo
 /examples/ldns-compare-zones.o
+/examples/ldns-compare-zones-rrr
+/examples/ldns-compare-zones-rrr.lo
+/examples/ldns-compare-zones-rrr.o
 /examples/ldns-dane
 /examples/ldns-dane.1
 /examples/ldns-dane.lo
