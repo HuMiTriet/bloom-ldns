@@ -226,10 +226,33 @@ int main(int argc, char** argv)
   }
   fclose(fp2);
 
+  ldns_rr* z1_soa = ldns_zone_soa(z1);
+  ldns_rr* z2_soa = ldns_zone_soa(z2);
+
+  if (!z1_soa || !z2_soa) {
+    fprintf(stderr, "%s: no SOA record found\n", z1_soa ? fn2 : fn1);
+    exit(EXIT_FAILURE);
+  }
+
+  uint32_t z1_soa_serial = ldns_rdf2native_int32(ldns_rr_rdf(z1_soa, 2));
+  uint32_t z2_soa_serial = ldns_rdf2native_int32(ldns_rr_rdf(z2_soa, 2));
+
+  if (z1_soa_serial > z2_soa_serial) {
+    fprintf(stderr, "The first zone file has a larger serial number than the second. The second zone file should be the day after the first zone file capture day.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  if (ldns_rr_compare(z1_soa, z2_soa) == 0) {
+    printf("0,0,0,0,0\n");
+    exit(EXIT_SUCCESS);
+  }
+
   rrl1 = ldns_zone_rrs(z1);
+  ldns_rr_list_push_rr(rrl1, z1_soa);
   rrc1 = ldns_rr_list_rr_count(rrl1);
 
   rrl2 = ldns_zone_rrs(z2);
+  ldns_rr_list_push_rr(rrl2, z2_soa);
   rrc2 = ldns_rr_list_rr_count(rrl2);
 
   if (sort) {
@@ -247,27 +270,6 @@ int main(int argc, char** argv)
     }
     /* sort zone 2 */
     sort_zone_rrset_rrsig(rrl2);
-  }
-
-  ldns_rr* z1_soa = ldns_zone_soa(z1);
-  ldns_rr* z2_soa = ldns_zone_soa(z2);
-
-  if (!z1_soa || !z2_soa) {
-    fprintf(stderr, "%s: no SOA record found\n", z1_soa ? fn2 : fn1);
-    exit(EXIT_FAILURE);
-  }
-
-  if (ldns_rr_compare(z1_soa, z2_soa) == 0) {
-    printf("0,0,0,0,0\n");
-    exit(EXIT_SUCCESS);
-  }
-
-  uint32_t z1_soa_serial = ldns_rdf2native_int32(ldns_rr_rdf(z1_soa, 2));
-  uint32_t z2_soa_serial = ldns_rdf2native_int32(ldns_rr_rdf(z2_soa, 2));
-
-  if (z1_soa_serial > z2_soa_serial) {
-    fprintf(stderr, "The first zone file has a larger serial number than the second. The second zone file should be the day after the first zone file capture day.\n");
-    exit(EXIT_FAILURE);
   }
 
   for (i = 0, j = 0; i < rrc1 || j < rrc2;) {
