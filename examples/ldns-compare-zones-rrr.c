@@ -248,11 +248,17 @@ int main(int argc, char** argv)
   }
 
   rrl1 = ldns_zone_rrs(z1);
-  ldns_rr_list_push_rr(rrl1, z1_soa);
+  ldns_rr_list* wsoa = ldns_rr_list_new();
+  ldns_rr_list_push_rr(wsoa, z1_soa);
+  ldns_rr_list_cat(wsoa, rrl1);
+  rrl1 = wsoa;
   rrc1 = ldns_rr_list_rr_count(rrl1);
 
   rrl2 = ldns_zone_rrs(z2);
-  ldns_rr_list_push_rr(rrl2, z2_soa);
+  wsoa = ldns_rr_list_new();
+  ldns_rr_list_push_rr(wsoa, z2_soa);
+  ldns_rr_list_cat(wsoa, rrl2);
+  rrl2 = wsoa;
   rrc2 = ldns_rr_list_rr_count(rrl2);
 
   if (sort) {
@@ -337,4 +343,11 @@ int main(int argc, char** argv)
          (unsigned int)num_rrsigs_chg,
          (unsigned int)num_rrset_del,
          (unsigned int)num_rrset_chg);
+
+  ldns_rr_list_free(rrl1);
+  ldns_rr_list_free(rrl2);
+  ldns_zone_deep_free(z2);
+  ldns_zone_deep_free(z1);
+
+  exit(EXIT_SUCCESS);
 }
