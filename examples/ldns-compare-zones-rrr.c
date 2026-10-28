@@ -231,6 +231,8 @@ int main(int argc, char** argv)
 
   if (!z1_soa || !z2_soa) {
     fprintf(stderr, "%s: no SOA record found\n", z1_soa ? fn2 : fn1);
+    ldns_zone_deep_free(z2);
+    ldns_zone_deep_free(z1);
     exit(EXIT_FAILURE);
   }
 
@@ -239,11 +241,15 @@ int main(int argc, char** argv)
 
   if (z1_soa_serial > z2_soa_serial) {
     fprintf(stderr, "The first zone file has a larger serial number than the second. The second zone file should be the day after the first zone file capture day.\n");
+    ldns_zone_deep_free(z2);
+    ldns_zone_deep_free(z1);
     exit(EXIT_FAILURE);
   }
 
   if (ldns_rr_compare(z1_soa, z2_soa) == 0) {
     printf("0,0,0,0,0\n");
+    ldns_zone_deep_free(z2);
+    ldns_zone_deep_free(z1);
     exit(EXIT_SUCCESS);
   }
 
